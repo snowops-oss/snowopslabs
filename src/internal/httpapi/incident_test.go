@@ -408,3 +408,80 @@ func TestRuns_HiddenRunWithholdsItsOutput(t *testing.T) {
 	}
 	assertProblem(t, do(s, http.MethodGet, "/runs/run-9/logs", "", nil), http.StatusForbidden, "hidden_run", apiPrefix+"/runs/run-9/logs")
 }
+
+// Tests for --not-since and --exclude query parameters.
+// These filter the fault pool when using inject-random.
+
+func TestHandleIncidentInjectRandom_InvalidNotSince(t *testing.T) {
+	s := newContractLab(t)
+
+	// Invalid duration format.
+	w := do(s, http.MethodPost, "/incidents/inject-random?app=go-api&seed=42&not-since=invalid", "", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid not-since: got %d, want 400", w.Code)
+	}
+	var problem struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("response: %v", err)
+	}
+	if !strings.HasSuffix(problem.Type, "invalid_input") {
+		t.Fatalf("problem type = %s, want suffix invalid_input", problem.Type)
+	}
+}
+
+func TestHandleIncidentInjectRandom_NegativeNotSince(t *testing.T) {
+	s := newContractLab(t)
+
+	// Negative duration.
+	w := do(s, http.MethodPost, "/incidents/inject-random?app=go-api&seed=42&not-since=-1h", "", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("negative not-since: got %d, want 400", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "non-negative") {
+		t.Fatalf("error should mention non-negative: %s", w.Body.String())
+	}
+}
+
+func TestHandleIncidentInjectRandom_ExcludeUnknownFault(t *testing.T) {
+	s := newContractLab(t)
+
+	// Exclude must have a valid fault name.
+	w := do(s, http.MethodPost, "/incidents/inject-random?app=go-api&seed=42&exclude=nonexistent", "", nil)
+	waitForJobs(t, s)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("exclude unknown fault: got %d, want 409", w.Code)
+	}
+	var problem struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("response: %v", err)
+	}
+	if !strings.HasSuffix(problem.Type, "no_eligible_fault") {
+		t.Fatalf("problem type = %s, want suffix no_eligible_fault", problem.Type)
+	}
+	if !strings.Contains(w.Body.String(), "nonexistent") {
+		t.Fatalf("error should name the fault: %s", w.Body.String())
+	}
+}
+
+func TestHandleIncidentInjectRandom_ExcludeAllFaults(t *testing.T) {
+	s := newContractLab(t)
+
+	// Exclude the only available fault (demo-fault) - should error.
+	w := do(s, http.MethodPost, "/incidents/inject-random?app=go-api&seed=42&exclude=demo-fault", "", nil)
+	waitForJobs(t, s)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("exclude all faults: got %d, want 409", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "filters") {
+		t.Fatalf("error should mention filters: %s", body)
+	}
+	// Verify it's the "after applying filters" error, not "unknown fault" error
+	if strings.Contains(body, "does not exist") {
+		t.Fatalf("error should not mention unknown fault: %s", body)
+	}
+}

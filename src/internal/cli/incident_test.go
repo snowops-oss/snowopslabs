@@ -441,3 +441,46 @@ func TestIncident_ForceInjectReplacesTheActiveIncident(t *testing.T) {
 		t.Error("--force did not run the fault's inject script again")
 	}
 }
+
+func TestIncident_InjectFlagsRequireRandom(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		wantErr     string
+		notSinceVal string
+		excludeVal  []string
+	}{
+		{
+			name:    "--not-since without --random",
+			args:    []string{"incident", "inject", labtest.Fault, "--not-since", "1h"},
+			wantErr: "--not-since and --exclude require --random",
+		},
+		{
+			name:    "--exclude without --random",
+			args:    []string{"incident", "inject", labtest.Fault, "--exclude", "fault-a"},
+			wantErr: "--not-since and --exclude require --random",
+		},
+		{
+			name:    "--not-since invalid duration",
+			args:    []string{"incident", "inject", "--random", "--not-since", "invalid"},
+			wantErr: "invalid --not-since duration",
+		},
+		{
+			name:    "--not-since negative duration",
+			args:    []string{"incident", "inject", "--random", "--not-since", "-1h"},
+			wantErr: "--not-since duration must be non-negative",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := newTerminal(t)
+			r := l.run(tt.args...)
+			if r.exitCode() != 1 {
+				t.Fatalf("exit code = %d, want 1", r.exitCode())
+			}
+			if !strings.Contains(r.stderr, tt.wantErr) {
+				t.Errorf("stderr = %q, want it to contain %q", r.stderr, tt.wantErr)
+			}
+		})
+	}
+}

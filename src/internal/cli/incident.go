@@ -27,6 +27,8 @@ var (
 	injectDeployPrereqs bool
 	injectSeed          int64
 	injectCategory      string
+	injectNotSince      string
+	injectExclude       []string
 )
 
 var incidentCmd = &cobra.Command{
@@ -107,7 +109,8 @@ var incidentInjectCmd = &cobra.Command{
 	Short: "Inject a fault (or --random for a surprise)",
 	Long: `Breaks the lab on purpose. With --random the engine picks an eligible
 fault; add --silent to hide which one (real game-day mode) and --seed N for
-a reproducible pick across a team.`,
+a reproducible pick across a team. Use --not-since and --exclude with --random
+to skip recently used or explicitly named faults.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := ""
@@ -122,11 +125,29 @@ a reproducible pick across a team.`,
 				return err
 			}
 		}
+
+		// --not-since and --exclude only work with --random
+		if !injectRandom && (injectNotSince != "" || len(injectExclude) > 0) {
+			return errors.New("--not-since and --exclude require --random")
+		}
+
+		var notSince time.Duration
+		if injectNotSince != "" {
+			var err error
+			notSince, err = time.ParseDuration(injectNotSince)
+			if err != nil {
+				return fmt.Errorf("invalid --not-since duration: %w", err)
+			}
+			if notSince < 0 {
+				return errors.New("--not-since duration must be non-negative")
+			}
+		}
+
 		if err := requireCluster(cmd.Context()); err != nil {
 			return err
 		}
 		if injectRandom {
-			f, err := incEng.PickRandom(injectSeed, injectCategory)
+			f, err := incEng.PickRandom(injectSeed, injectCategory, notSince, injectExclude)
 			if err != nil {
 				return err
 			}
@@ -447,6 +468,8 @@ func init() {
 	incidentInjectCmd.Flags().BoolVar(&injectForce, "force", false, "inject even if another incident is active")
 	incidentInjectCmd.Flags().Int64Var(&injectSeed, "seed", 0, "seed for --random (reproducible team exercises)")
 	incidentInjectCmd.Flags().StringVar(&injectCategory, "category", "", "restrict --random to a category (workload|network|resources|storage|config)")
+	incidentInjectCmd.Flags().StringVar(&injectNotSince, "not-since", "", "with --random, skip faults injected within this duration (e.g. 1h, 24h)")
+	incidentInjectCmd.Flags().StringSliceVar(&injectExclude, "exclude", nil, "with --random, skip these faults by name (comma-separated, repeatable)")
 
 	incidentCmd.AddCommand(incidentListCmd())
 	incidentCmd.AddCommand(incidentInfoCmd)

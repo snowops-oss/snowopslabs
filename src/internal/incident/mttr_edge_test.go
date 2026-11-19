@@ -76,7 +76,7 @@ func TestPickRandom_NoEligibleFaultsEdge(t *testing.T) {
 	writeFault(t, root, "fault-a")
 	e := NewEngine(root, "k3d.local")
 
-	_, err := e.PickRandom(0, "")
+	_, err := e.PickRandom(0, "", 0, nil)
 	if err == nil {
 		t.Fatal("expected error when no faults are eligible, got nil")
 	}
@@ -90,7 +90,7 @@ func TestPickRandom_NoEligibleFaultsEdge(t *testing.T) {
 func TestPickRandom_InvalidCategory(t *testing.T) {
 	e, _ := testEngine(t, "fault-a", "fault-b")
 	// "network" is a valid category string but none of the test faults use it.
-	_, err := e.PickRandom(42, "network")
+	_, err := e.PickRandom(42, "network", 0, nil)
 	if err == nil {
 		t.Fatal("expected error for category with no eligible faults, got nil")
 	}

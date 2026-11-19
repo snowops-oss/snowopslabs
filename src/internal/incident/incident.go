@@ -588,25 +588,68 @@ func (e *Engine) Eligible() []*Fault {
 
 // PickRandom picks a random eligible fault, optionally from one category. A
 // non-zero seed makes the pick repeatable, so a team can all get the same one.
-func (e *Engine) PickRandom(seed int64, category string) (*Fault, error) {
+// notSince excludes faults recorded in incident history within that duration.
+// exclude skips the named faults.
+func (e *Engine) PickRandom(seed int64, category string, notSince time.Duration, exclude []string) (*Fault, error) {
 	var pool []*Fault
 	for _, f := range e.Eligible() {
 		if category == "" || f.Category == category {
 			pool = append(pool, f)
 		}
 	}
-	if len(pool) == 0 {
-		return nil, fmt.Errorf("no eligible faults%s - are the demo apps deployed?", catSuffix(category))
+
+	excluded := make(map[string]bool)
+	for _, name := range exclude {
+		excluded[name] = true
+	}
+
+	// Verify excluded faults exist in the library.
+	for name := range excluded {
+		if _, err := e.Get(name); err != nil {
+			return nil, fmt.Errorf("excluded fault %q does not exist", name)
+		}
+	}
+
+	// Load history to find faults injected within the notSince window.
+	var historyCutoff time.Time
+	if notSince > 0 {
+		historyCutoff = time.Now().UTC().Add(-notSince)
+		recs, err := e.History()
+		if err != nil {
+			return nil, fmt.Errorf("reading incident history: %w", err)
+		}
+		for _, r := range recs {
+			if r.InjectedAt.After(historyCutoff) {
+				excluded[r.Fault] = true
+			}
+		}
+		// Also exclude the active incident if its injection falls in the window.
+		if active, err := e.Active(); err == nil && active != nil {
+			if active.InjectedAt.After(historyCutoff) {
+				excluded[active.Fault] = true
+			}
+		}
+	}
+
+	// Filter the pool, keeping deterministic order (Eligible returns List() order, which is sorted by name).
+	var filtered []*Fault
+	for _, f := range pool {
+		if !excluded[f.Name] {
+			filtered = append(filtered, f)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil, fmt.Errorf("no eligible faults%s after applying filters - try without --not-since or --exclude", catSuffix(category))
 	}
 	if seed == 0 {
 		seed = time.Now().UnixNano()
 	}
 	// A simple LCG, so the same seed picks the same fault on every Go version.
-	idx := int((seed*6364136223846793005 + 1442695040888963407) % int64(len(pool)))
+	idx := int((seed*6364136223846793005 + 1442695040888963407) % int64(len(filtered)))
 	if idx < 0 {
 		idx = -idx
 	}
-	return pool[idx], nil
+	return filtered[idx], nil
 }
 
 func catSuffix(category string) string {
