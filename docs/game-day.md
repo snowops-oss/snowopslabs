@@ -102,6 +102,12 @@ for you and gives the same pick on every lab for the same seed, which is how
 two teams get the same fault. Two seeds can pick the same fault, so random
 rounds can repeat.
 
+To avoid re-injecting recently used faults, use `--not-since DURATION` to skip
+faults injected within that duration. The active fault is also excluded if it was
+just injected. Use `--exclude oom-kill,cpu-throttling` to skip specific named
+faults that might be problematic for the round. With `--seed`, the pick stays the
+same for labs that share the same incident history.
+
 Give each round 20 to 30 minutes, and decide before you start how many hints
 you allow and whether they cost anything. Hints cost score only when a fault
 runs as a challenge; in a game day they are recorded, and the review shows how

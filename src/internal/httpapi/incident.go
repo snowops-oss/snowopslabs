@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/snowops-oss/snowopslabs/internal/incident"
@@ -85,10 +86,33 @@ func (s *Server) handleIncidentInject(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleIncidentInjectRandom(w http.ResponseWriter, r *http.Request) {
 	seed, _ := strconv.ParseInt(r.URL.Query().Get("seed"), 10, 64)
+
+	// Parse not-since duration
+	var notSince time.Duration
+	if ns := r.URL.Query().Get("not-since"); ns != "" {
+		var err error
+		notSince, err = time.ParseDuration(ns)
+		if err != nil {
+			respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid not-since duration: %v", err))
+			return
+		}
+		if notSince < 0 {
+			respondError(w, r, http.StatusBadRequest, "invalid_input", "not-since duration must be non-negative")
+			return
+		}
+	}
+
+	// Parse exclude list (comma-separated, or repeated query param)
+	exclude := r.URL.Query()["exclude"]
+	// If single comma-separated value, split it
+	if len(exclude) == 1 && strings.Contains(exclude[0], ",") {
+		exclude = strings.Split(exclude[0], ",")
+	}
+
 	// The pick runs on the engine bound to the requested app: which faults are
 	// eligible depends on the workload they would break.
 	s.injectAndRespond(w, r, func(bound *incident.Engine) (string, bool) {
-		f, err := bound.PickRandom(seed, r.URL.Query().Get("category"))
+		f, err := bound.PickRandom(seed, r.URL.Query().Get("category"), notSince, exclude)
 		if err != nil {
 			respondError(w, r, http.StatusConflict, "no_eligible_fault", err.Error())
 			return "", false

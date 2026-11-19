@@ -54,9 +54,11 @@ The UI asks the same question in its inject dialog.
 sizing, the day before, rounds, rescue and review.
 
 ```bash
-labctl incident inject --random --silent      # surprise fault, name hidden
+labctl incident inject --random --silent      # a surprise fault, name hidden
 labctl incident inject --random --seed 42     # reproducible pick for a whole team
 labctl incident inject --random --category network
+labctl incident inject --random --not-since 1h   # skip faults from last hour
+labctl incident inject --random --exclude oom-kill,cpu-throttling  # skip named faults
 ```
 
 `inject` flags:
@@ -66,9 +68,11 @@ labctl incident inject --random --category network
 | `--random` | off | pick a random eligible fault |
 | `--seed` | - | seed for `--random`, for reproducible team exercises |
 | `--category` | - | restrict `--random` to `workload`, `network`, `resources`, `storage` or `config` |
-| `--silent` | off | do not reveal which fault was injected: the inject prints neither the fault's name nor its script's output, `incident list` does not mark the active fault, unresolved `incident status` says only `NOT RESOLVED - keep digging, or: labctl incident hint` (a check error may say it could not run, without the check name or output), resolved status names the check and fault, the inject arms its alert rule under the neutral name `labfault-silent`, so Prometheus' Alerts page does not name the fault, and the run history records the inject with the target `(hidden)` and withholds its output (`labctl runs logs` and `GET /runs/{id}/logs` refuse it) |
+| `--not-since` | - | skip faults injected within this duration; e.g. `1h`, `30m`; excludes active fault too; only with `--random` |
+| `--exclude` | - | comma-separated list of fault names to skip; only with `--random`; unknown faults return error |
+| `--silent` | off | do not reveal which fault was injected |
 | `--force` | off | inject even when another incident is active |
-| `--deploy-prereqs` | off | install the platform components the fault needs, and build and deploy the apps it lists under `prerequisites.apps` (and its target, when that is an app), if they are not running. Without it, a missing app stops the inject with the command that deploys it. |
+| `--deploy-prereqs` | off | install platform components and deploy apps if not running |
 
 ## Rules and timing
 

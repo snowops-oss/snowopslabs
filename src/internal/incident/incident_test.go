@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/snowops-oss/snowopslabs/internal/executor"
+	"github.com/snowops-oss/snowopslabs/internal/results"
 	"github.com/snowops-oss/snowopslabs/internal/workload"
 	"github.com/snowops-oss/snowopslabs/pkg/checks"
 )
@@ -292,21 +293,21 @@ func TestResolve_EscapeHatch(t *testing.T) {
 func TestPickRandom(t *testing.T) {
 	e, _ := testEngine(t, "fault-a", "fault-b", "fault-c")
 
-	first, err := e.PickRandom(42, "")
+	first, err := e.PickRandom(42, "", 0, nil)
 	if err != nil {
 		t.Fatalf("PickRandom: %v", err)
 	}
 	for range 5 {
-		again, _ := e.PickRandom(42, "")
+		again, _ := e.PickRandom(42, "", 0, nil)
 		if again.Name != first.Name {
 			t.Fatalf("seeded pick must be deterministic: %q vs %q", again.Name, first.Name)
 		}
 	}
 
-	if _, err := e.PickRandom(1, "network"); err == nil {
+	if _, err := e.PickRandom(1, "network", 0, nil); err == nil {
 		t.Fatal("no eligible faults in category network - expected error")
 	}
-	if f, err := e.PickRandom(1, "workload"); err != nil || f == nil {
+	if f, err := e.PickRandom(1, "workload", 0, nil); err != nil || f == nil {
 		t.Fatalf("category filter: %v", err)
 	}
 }
@@ -315,8 +316,341 @@ func TestPickRandom_NoEligible(t *testing.T) {
 	root := t.TempDir() // prereq app missing
 	writeFault(t, root, "fault-a")
 	e := NewEngine(root, "k3d.local")
-	if _, err := e.PickRandom(1, ""); err == nil {
+	if _, err := e.PickRandom(1, "", 0, nil); err == nil {
 		t.Fatal("expected no-eligible error")
+	}
+}
+
+func TestPickRandom_NotSince(t *testing.T) {
+	// writeHistoryRecord appends a results record with an old timestamp to create
+	// history that is outside the notSince window.
+	writeHistoryRecord := func(e *Engine, faultName string, age time.Duration) {
+		now := time.Now().UTC()
+		oldStartedAt := now.Add(-age - time.Hour) // Well outside the window
+		oldEndedAt := oldStartedAt.Add(time.Hour)
+		rec := results.Record{
+			Kind:      results.KindIncident,
+			Name:      faultName,
+			User:      "test-user",
+			StartedAt: oldStartedAt,
+			EndedAt:   oldEndedAt,
+			Elapsed:   int64(time.Hour.Seconds()),
+			Score:     -1,
+			Outcome:   results.OutcomeResolved,
+			Workload:  "go-api",
+			Meta: map[string]any{
+				"category":   "workload",
+				"severity":   "medium",
+				"silent":     false,
+				"resolvedBy": "fix",
+			},
+		}
+		if err := e.resultsStore().Append(rec); err != nil {
+			t.Fatalf("append history record: %v", err)
+		}
+	}
+
+	tests := []struct {
+		name              string
+		faults            []string      // faults that exist
+		injectedInHistory []string      // faults with recent history (within window)
+		historyAge        time.Duration // age of history records for injectedInHistory
+		outsideHistory    []string      // faults with old history (outside window)
+		notSince          time.Duration
+		exclude           []string
+		forbiddenFaults   []string // faults that must never be picked
+		mustReturnAtLeast []string // faults that must be returned at some seed
+	}{
+		{
+			name:              "recent fault excluded by notSince",
+			faults:            []string{"fault-a", "fault-b", "fault-c"},
+			injectedInHistory: []string{"fault-a"},
+			notSince:          time.Hour,
+			forbiddenFaults:   []string{"fault-a"},
+		},
+		{
+			name:            "fault excluded by exclude flag",
+			faults:          []string{"fault-a", "fault-b", "fault-c"},
+			exclude:         []string{"fault-a"},
+			forbiddenFaults: []string{"fault-a"},
+		},
+		{
+			name:              "both notSince and exclude applied",
+			faults:            []string{"fault-a", "fault-b", "fault-c", "fault-d"},
+			injectedInHistory: []string{"fault-a"},
+			exclude:           []string{"fault-b"},
+			notSince:          time.Hour,
+			forbiddenFaults:   []string{"fault-a", "fault-b"},
+		},
+		{
+			name:              "zero notSince excludes nothing from history",
+			faults:            []string{"fault-a", "fault-b"},
+			injectedInHistory: []string{"fault-a"},
+			notSince:          0,
+		},
+		{
+			name:              "history outside window is not excluded",
+			faults:            []string{"fault-a", "fault-b", "fault-c"},
+			outsideHistory:    []string{"fault-a"},
+			historyAge:        24 * time.Hour,
+			notSince:          time.Hour,
+			mustReturnAtLeast: []string{"fault-a"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			createApp(t, root, "go-api")
+			for _, f := range tt.faults {
+				writeFault(t, root, f)
+			}
+			e := NewEngine(root, "k3d.local")
+
+			// Create recent history records
+			for _, f := range tt.injectedInHistory {
+				ex := executor.New(root)
+				if _, err := e.Inject(f, ex, false, false); err != nil {
+					t.Fatalf("Inject %s: %v", f, err)
+				}
+				if _, err := e.Resolve("", ex, ""); err != nil {
+					t.Fatalf("Resolve: %v", err)
+				}
+			}
+
+			// Create old history records (outside notSince window)
+			for _, f := range tt.outsideHistory {
+				writeHistoryRecord(e, f, tt.historyAge)
+			}
+
+			// Test seeds 1-200 to verify determinism and exclusions
+			for seed := int64(1); seed <= 200; seed++ {
+				f, err := e.PickRandom(seed, "", tt.notSince, tt.exclude)
+				if err != nil {
+					t.Fatalf("PickRandom with seed %d: %v", seed, err)
+				}
+
+				// Verify returned fault is not in forbidden set
+				for _, forb := range tt.forbiddenFaults {
+					if f.Name == forb {
+						t.Fatalf("seed %d: forbidden fault %q was picked", seed, f.Name)
+					}
+				}
+
+				// Same seed + same history = same pick
+				f2, err := e.PickRandom(seed, "", tt.notSince, tt.exclude)
+				if err != nil {
+					t.Fatalf("PickRandom repeat with seed %d: %v", seed, err)
+				}
+				if f2.Name != f.Name {
+					t.Fatalf("seed %d: repeat pick %q != first pick %q", seed, f2.Name, f.Name)
+				}
+			}
+
+			// Verify faults that "must return at least once" are returned over some seed
+			for _, mustFault := range tt.mustReturnAtLeast {
+				found := false
+				for seed := int64(1); seed <= 200; seed++ {
+					f, err := e.PickRandom(seed, "", tt.notSince, tt.exclude)
+					if err != nil {
+						continue
+					}
+					if f.Name == mustFault {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Fatalf("fault %q should be returned at least once over seeds 1-200", mustFault)
+				}
+			}
+		})
+	}
+}
+
+func TestPickRandom_Exclude(t *testing.T) {
+	tests := []struct {
+		name              string
+		faults            []string
+		exclude           []string
+		forbiddenFaults   []string
+		mustReturnAtLeast []string
+	}{
+		{
+			name:            "single fault excluded",
+			faults:          []string{"fault-a", "fault-b", "fault-c"},
+			exclude:         []string{"fault-a"},
+			forbiddenFaults: []string{"fault-a"},
+		},
+		{
+			name:            "multiple faults excluded",
+			faults:          []string{"fault-a", "fault-b", "fault-c"},
+			exclude:         []string{"fault-a", "fault-b"},
+			forbiddenFaults: []string{"fault-a", "fault-b"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			createApp(t, root, "go-api")
+			for _, f := range tt.faults {
+				writeFault(t, root, f)
+			}
+			e := NewEngine(root, "k3d.local")
+
+			// Test seeds 1-200 to verify determinism and exclusions
+			for seed := int64(1); seed <= 200; seed++ {
+				f, err := e.PickRandom(seed, "", 0, tt.exclude)
+				if err != nil {
+					t.Fatalf("PickRandom with seed %d: %v", seed, err)
+				}
+
+				// Verify returned fault is not in forbidden set
+				for _, forb := range tt.forbiddenFaults {
+					if f.Name == forb {
+						t.Fatalf("seed %d: forbidden fault %q was picked", seed, f.Name)
+					}
+				}
+
+				// Same seed + same history = same pick
+				f2, err := e.PickRandom(seed, "", 0, tt.exclude)
+				if err != nil {
+					t.Fatalf("PickRandom repeat with seed %d: %v", seed, err)
+				}
+				if f2.Name != f.Name {
+					t.Fatalf("seed %d: repeat pick %q != first pick %q", seed, f2.Name, f.Name)
+				}
+			}
+
+			// Verify faults that "must return at least once" are returned over some seed
+			for _, mustFault := range tt.mustReturnAtLeast {
+				found := false
+				for seed := int64(1); seed <= 200; seed++ {
+					f, err := e.PickRandom(seed, "", 0, tt.exclude)
+					if err != nil {
+						continue
+					}
+					if f.Name == mustFault {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Fatalf("fault %q should be returned at least once over seeds 1-200", mustFault)
+				}
+			}
+		})
+	}
+}
+
+func TestPickRandom_ExcludeUnknownFault(t *testing.T) {
+	root := t.TempDir()
+	createApp(t, root, "go-api")
+	writeFault(t, root, "fault-a")
+	e := NewEngine(root, "k3d.local")
+
+	// Try to exclude unknown fault
+	_, err := e.PickRandom(42, "", 0, []string{"unknown-fault"})
+	if err == nil {
+		t.Fatal("expected error for unknown fault in exclude")
+	}
+	if !strings.Contains(err.Error(), "excluded fault") || !strings.Contains(err.Error(), "unknown-fault") {
+		t.Fatalf("error should name the unknown fault: %v", err)
+	}
+}
+
+func TestPickRandom_NotSinceAndExclude(t *testing.T) {
+	root := t.TempDir()
+	createApp(t, root, "go-api")
+	writeFault(t, root, "fault-a")
+	writeFault(t, root, "fault-b")
+	writeFault(t, root, "fault-c")
+	writeFault(t, root, "fault-d")
+	e := NewEngine(root, "k3d.local")
+
+	// Inject fault-a and fault-b to create history
+	ex := executor.New(root)
+	if _, err := e.Inject("fault-a", ex, false, false); err != nil {
+		t.Fatalf("Inject fault-a: %v", err)
+	}
+	if _, err := e.Resolve("", ex, ""); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if _, err := e.Inject("fault-b", ex, false, false); err != nil {
+		t.Fatalf("Inject fault-b: %v", err)
+	}
+	if _, err := e.Resolve("", ex, ""); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	// Exclude fault-c, and use notSince to also exclude fault-a and fault-b
+	f, err := e.PickRandom(42, "", time.Hour, []string{"fault-c"})
+	if err != nil {
+		t.Fatalf("PickRandom with notSince and exclude: %v", err)
+	}
+	// Only fault-d should remain
+	if f.Name != "fault-d" {
+		t.Fatalf("expected fault-d, got %s", f.Name)
+	}
+}
+
+func TestPickRandom_AllExcluded(t *testing.T) {
+	root := t.TempDir()
+	createApp(t, root, "go-api")
+	writeFault(t, root, "fault-a")
+	writeFault(t, root, "fault-b")
+	e := NewEngine(root, "k3d.local")
+
+	// Exclude all faults - should error
+	_, err := e.PickRandom(42, "", 0, []string{"fault-a", "fault-b"})
+	if err == nil {
+		t.Fatal("expected error when all faults excluded")
+	}
+	if !strings.Contains(err.Error(), "no eligible faults") || !strings.Contains(err.Error(), "filters") {
+		t.Fatalf("error should mention filters: %v", err)
+	}
+
+	// Verify excluded faults are never picked for seeds 1-200
+	for seed := int64(1); seed <= 200; seed++ {
+		_, err := e.PickRandom(seed, "", 0, []string{"fault-a", "fault-b"})
+		if err == nil {
+			t.Fatalf("seed %d: expected error, got success", seed)
+		}
+	}
+}
+
+func TestPickRandom_NotSinceExcludesActive(t *testing.T) {
+	root := t.TempDir()
+	createApp(t, root, "go-api")
+	writeFault(t, root, "fault-a")
+	writeFault(t, root, "fault-b")
+	e := NewEngine(root, "k3d.local")
+
+	// Inject fault-a (make it active)
+	ex := executor.New(root)
+	if _, err := e.Inject("fault-a", ex, false, false); err != nil {
+		t.Fatalf("Inject fault-a: %v", err)
+	}
+
+	// Pick with notSince that covers the active injection time
+	f, err := e.PickRandom(42, "", time.Hour, nil)
+	if err != nil {
+		t.Fatalf("PickRandom with notSince: %v", err)
+	}
+	// Active fault-a should be excluded, so fault-b should be picked
+	if f.Name != "fault-b" {
+		t.Fatalf("expected fault-b (fault-a is active), got %s", f.Name)
+	}
+
+	// Resolve and try again - now fault-a is in history and should still be excluded
+	if _, err := e.Resolve("", ex, ""); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	f, err = e.PickRandom(42, "", time.Hour, nil)
+	if err != nil {
+		t.Fatalf("PickRandom after resolve: %v", err)
+	}
+	if f.Name != "fault-b" {
+		t.Fatalf("expected fault-b (fault-a in history), got %s", f.Name)
 	}
 }
 
