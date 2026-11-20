@@ -5,7 +5,7 @@
     "IngressURLSuffix": "snowops.localhost",
     "LokiRetentionPeriod": "168h",
     "MonitoringNamespace": "monitoring",
-    "SinceActivation": "4m",
+    "SinceActivation": "5m",
     "WorkloadMetric": "http_server_request_duration_seconds",
     "WorkloadName": "go-api",
     "WorkloadNamespace": "go-api",
@@ -28,15 +28,15 @@
     },
     "prometheus/api/v1/query?query=%28sum%28rate%28container_cpu_cfs_throttled_periods_total%7Bnamespace%3D%22go-api%22%2Ccontainer%3D%22go-api%22%7D%5B5m%5D%29%29+%2F+clamp_min%28sum%28rate%28container_cpu_cfs_periods_total%7Bnamespace%3D%22go-api%22%2Ccontainer%3D%22go-api%22%7D%5B5m%5D%29%29%2C+0.001%29%29+or+vector%280%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793093289.839,\"0\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1795177231.207,\"0\"]}]}}"
     },
     "prometheus/api/v1/query?query=count%28container_cpu_allocation%7Bnamespace%3D%22go-api%22%7D%29+or+vector%280%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793093289.672,\"2\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1795177230.943,\"3\"]}]}}"
     },
-    "prometheus/api/v1/query?query=sum%28rate%28http_server_request_duration_seconds_count%7Bapp%3D%22go-api%22%7D%5B4m%5D%29%29+or+vector%280%29": {
+    "prometheus/api/v1/query?query=sum%28rate%28http_server_request_duration_seconds_count%7Bapp%3D%22go-api%22%7D%5B5m%5D%29%29+or+vector%280%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793093289.673,\"20.344254166666666\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1795177230.944,\"17.71\"]}]}}"
     }
   },
   "results": {
