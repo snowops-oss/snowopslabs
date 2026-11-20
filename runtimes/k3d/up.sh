@@ -17,6 +17,9 @@ AGENTS="${AGENTS:-1}"
 # The cluster-upgrade-drill creates a cluster pinned to an older version, then
 # rolls the agents to a newer one.
 K3S_VERSION="${K3S_VERSION:-}"
+# REGISTRY_MIRRORS (<registry>=<mirror>,..., see _lib/mirrors.sh) makes the
+# nodes pull through those mirrors first; the file below carries them to k3d.
+registries_file=""
 # How long to wait for an existing cluster's API after a restart, per attempt.
 REACHABLE_WAIT="${REACHABLE_WAIT:-180}"
 # How long to keep waiting (and restarting stuck nodes) for every node to be Ready.
@@ -28,6 +31,8 @@ NODE_CHECK_INTERVAL="${NODE_CHECK_INTERVAL:-10}"
 
 # shellcheck source=../_lib/docker.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/_lib/docker.sh"
+# shellcheck source=../_lib/mirrors.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/_lib/mirrors.sh"
 # shellcheck source=../_lib/k3d-serverlb.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/_lib/k3d-serverlb.sh"
 
@@ -281,6 +286,14 @@ create_cluster() {
   if [ -n "$K3S_VERSION" ]; then
     echo "Pinning k3s version to ${K3S_VERSION}"
     create_args+=(--image "rancher/k3s:${K3S_VERSION}")
+  fi
+  local mirrors
+  mirrors="$(mirror_pairs)" || exit 1
+  if [ -n "$mirrors" ]; then
+    registries_file="$(mktemp)"
+    trap 'rm -f "$registries_file"' EXIT
+    k3d_registries_yaml "$mirrors" >"$registries_file"
+    create_args+=(--registry-config "$registries_file")
   fi
   # Each node offers the scheduler an even share of Docker's memory rather than
   # all of it. An existing cluster keeps its settings until it is recreated.

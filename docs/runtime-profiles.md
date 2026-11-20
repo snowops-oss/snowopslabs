@@ -31,7 +31,8 @@ Each profile is a directory `runtimes/<name>/` containing exactly:
 | `move-ingress.sh` | no | Add free host ports to the running cluster's ingress and record them in `~/.snowops/clusters/<name>.env`. `labctl init` calls it when the lab's Grafana does not answer through the recorded port from this machine. Only k3d has one (`k3d cluster edit --port-add`); kind cannot add ports to a running cluster. |
 
 Scripts every local profile shares live in `runtimes/_lib/`: `docker.sh` (sourced
-helpers for the Docker engine and the cluster record) and `move-domain.sh`
+helpers for the Docker engine and the cluster record), `mirrors.sh` (sourced
+helpers for [registry mirrors](#registry-mirrors)) and `move-domain.sh`
 (`<cluster> <old> <new>`: rewrite the lab's hostnames to a new suffix in place,
 which `labctl init` runs for a lab on a legacy default suffix).
 
@@ -86,6 +87,39 @@ except `INGRESS_CLASS`, which follows `INGRESS_PROVIDER` unless a profile or
 
 A new profile is added by creating `runtimes/<name>/` with these three files and
 honouring the guarantees above, no Go change is needed (golden rule 2).
+
+---
+
+## Registry mirrors
+
+Set `REGISTRY_MIRRORS` in `.env` (or the environment) to make the nodes of a
+`k3d` or `kind` lab pull images through a mirror. It is a comma-separated list
+of `<registry>=<mirror>` entries, one per registry:
+
+```bash
+REGISTRY_MIRRORS=docker.io=docker-mirror.example.com,ghcr.io=ghcr-mirror.example.com,registry.k8s.io=http://10.0.0.5:5000
+```
+
+- A mirror without a scheme is reached over `https`. Write `http://` for a
+  plain-HTTP mirror.
+- A node asks the mirror first and falls back to the original registry when the
+  mirror cannot serve the image.
+- A malformed entry stops `up.sh` before it creates a cluster, with the format
+  to use.
+- It applies when the cluster is created, and an existing cluster keeps the
+  mirrors it was built with. After changing it, run `labctl reset`.
+- It covers the pulls the cluster's containerd makes: platform charts, apps
+  and scenarios. Docker pulls the node images itself (`rancher/k3s`,
+  `kindest/node`, k3d's helper images), so set the Docker daemon's own
+  `registry-mirrors` for those. That setting only reaches Docker Hub.
+
+How each profile applies it:
+
+| Profile | How |
+|---|---|
+| `k3d` | `up.sh` writes a k3s `registries.yaml` and passes it to `k3d cluster create --registry-config`. Agents added later by `add-agents.sh` get it too. |
+| `kind` | `up.sh` points containerd at `/etc/containerd/certs.d` and writes a `hosts.toml` per registry into every node. |
+| `incluster` | Not applicable: the cluster already exists. Configure mirrors on its nodes. |
 
 ---
 

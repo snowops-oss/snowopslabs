@@ -20,6 +20,7 @@ page collects them by symptom. `labctl doctor` checks your machine, and
 | `the Docker daemon refused this user` | You were just added to the `docker` group. Log out and back in (WSL: `wsl --shutdown` in PowerShell), then `labctl init`. |
 | `this WSL distro has Docker Desktop integration turned off` | Docker Desktop → Settings → Resources → WSL Integration → enable your distro. |
 | `could not download <image>` | A registry download stalled twice. Check your connection, proxy or VPN, then `labctl init` again; it resumes. |
+| `REGISTRY_MIRRORS entry '<x>' is not valid` | An entry is not `<registry>=<mirror>`, repeats a registry, or has a scheme other than `http://` or `https://`. Fix it in `.env`, then `labctl init`. [Registry mirrors](runtime-profiles.md#registry-mirrors) has the format. |
 | `the platform did not install cleanly` | Usually Docker is short of memory (`TLS handshake timeout`, pods Pending). `labctl doctor`, then `labctl init`. Installs are safe to repeat. |
 | `setup-tools`: a tool `is older than` its minimum after installing | An older copy earlier on your `PATH` shadows the new one. Remove it, or put `~/.local/bin` (Homebrew's directory on macOS) earlier on `PATH`. |
 
