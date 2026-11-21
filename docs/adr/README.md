@@ -9,7 +9,7 @@ otherwise have to reverse-engineer from the code.
 
 | # | Decision | Status |
 |---|---|---|
-| [0001](0001-cut-cloud-and-commercial-scope.md) | Cut cloud runtimes and commercial surfaces | Accepted |
+| [0001](0001-cut-cloud-and-commercial-scope.md) | Cut cloud runtimes and commercial surfaces | Accepted; scope partly superseded by ADR-0017 |
 | [0002](0002-sqlite-persistence.md) | SQLite (pure Go) for persistence | Accepted |
 | [0003](0003-durable-run-engine.md) | Durable run engine over scripts, not a K8s operator | Accepted |
 | [0004](0004-lock-and-reject-concurrency.md) | Exclusive lock keys, reject conflicting runs | Accepted |
@@ -25,5 +25,6 @@ otherwise have to reverse-engineer from the code.
 | [0014](0014-workload-binding-and-app-contract.md) | Content binds to a workload, and apps meet a written contract | Accepted |
 | [0015](0015-learner-facing-workload-binding.md) | Hand-run scripts take the workload binding as flags; dashboards select the app; hostnames come from the Ingress | Accepted |
 | [0016](0016-hosted-labs-long-term.md) | Hosted labs are a long-term goal, built on the open-source lab | Accepted |
+| [0017](0017-tracks-and-targets.md) | Labs grow beyond Kubernetes by track; targets are an engine concept; tool licence rule | Accepted |
 
 Template: `0000-template.md`.

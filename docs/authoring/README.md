@@ -53,6 +53,26 @@ platform modules) and the stability guarantees you can rely on.
 - Content is **cross-platform, idempotent and declarative**, never hardcode
   logic in Go (see [CONTRIBUTING.md](../../CONTRIBUTING.md) golden rules).
 
+## Tools your content installs
+
+Before content installs a new tool (a chart, an image, a CLI), check its
+licence. It must allow running the tool unmodified in the free local lab at no
+cost to the learner, and inside a hosted lab
+([ADR-0016](../adr/0016-hosted-labs-long-term.md)).
+
+- OSI-approved licences (Apache-2.0, MIT, MPL-2.0, GPL) meet both.
+- Source-available licences (BSL, SSPL, Elastic) and vendor free tiers need
+  their terms read. Write what you found in the pull request that adds the
+  tool.
+- A tool whose community builds or images have stopped is not added, however
+  popular. Prefer a maintained open alternative.
+- The free path needs nothing paid: no licence key, no card on file. A tool
+  that needs an account sits behind `labctl connect` and an optional mode.
+- Use a trademark only to name the tool, never a logo.
+
+The reasoning, and the examples it already decided (OpenTofu over Terraform,
+no MinIO), are in [ADR-0017](../adr/0017-tracks-and-targets.md#tool-licences).
+
 ## Distribution
 
 There is no pack format or registry. Content lives in directories, so

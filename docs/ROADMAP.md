@@ -27,8 +27,11 @@ existing one. Smaller known problems are tracked as
   ([ADR-0014](adr/0014-workload-binding-and-app-contract.md)), and
   `labctl compare` runs one scenario against two apps.
 - **CLI and web UI.** Every operation is cancellable and recorded, and the
-  dashboard is built into the binary. Team mode adds users and a leaderboard on
-  a shared in-cluster server.
+  dashboard is built into the binary.
+- **Team game days.** A shared in-cluster server with users, roles and a
+  leaderboard, installed in one step, with a guide to running a game day.
+  Logins survive a restart, results export from the CLI, and a result card
+  can be shared, marked as self-reported.
 - **Your own content.** Everything is schema-validated (`labctl validate`), and
   your own scenarios load from `SNOWOPS_CONTENT_PATH` without forking.
 
@@ -49,13 +52,31 @@ requests `community-request`, and 👍 votes on them show what people want most.
   deploys, Postgres failover, multi-tenant guardrails, a golden path for new
   services, progressive delivery, disaster recovery with volume data and a move
   to Gateway API, along with new faults.
-- **[Team game day](https://github.com/snowops-oss/snowopslabs/milestone/3).** An
-  easier way to install the shared server, a guide to running a game day,
-  sessions that survive a restart, results you can export, and a shareable
-  result card marked as self-reported.
+- **[Game day for teams](https://github.com/snowops-oss/snowopslabs/milestone/4).**
+  Several teams play in one lab: each participant gets scoped cluster
+  credentials from one command, the facilitator runs timed rounds from the UI,
+  rounds don't repeat a fault, and the review has a timeline of every round
+  and who revealed each hint.
+- **[Tracks and targets](https://github.com/snowops-oss/snowopslabs/milestone/5).**
+  The groundwork for labs beyond Kubernetes, with no change to existing
+  content: named targets with their context passed to every run, `labctl
+  connect` for outside accounts with tokens kept in your keychain, and a track
+  filter in the catalog, CLI and UI
+  ([ADR-0017](adr/0017-tracks-and-targets.md)).
 
 ## Later
 
+- **A CI/CD track.** A Git forge with an Actions runner and a registry in the
+  cluster: build a pipeline from zero, promote a release, secure the pipeline,
+  and faults such as a poisoned cache, a mutable tag deploying the wrong
+  build, or a runner out of disk. An optional mode runs the same pipeline on
+  your own GitHub repository.
+- **An infrastructure-as-code track.** OpenTofu with state in an in-cluster S3
+  store: bootstrap, refactor without recreating, and faults such as a stuck
+  state lock, drift from a hand edit, or a rename that would destroy data.
+- **Cloud provider tracks.** Open-source emulators for the free path, then
+  your own sandbox account, each verified against a real account before it
+  merges. Which provider comes first follows what people ask for.
 - **Hosted labs.** The same scenarios on a cluster we run, opened in a browser.
   This is a long-term goal that comes after the open-source lab has a solid
   base of users, and its shape will follow what they need. The open-source lab

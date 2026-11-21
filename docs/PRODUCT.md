@@ -8,9 +8,10 @@
 
 ## One sentence
 
-**SnowOps Labs is a Kubernetes platform-engineering simulator: it stands up a
-realistic production-shaped cluster on your laptop in minutes, breaks it in
-realistic ways, and grades you on how you fix it.**
+**SnowOps Labs is a practice lab for platform and DevOps engineering: it
+stands up a realistic production-shaped environment on your laptop in minutes,
+breaks it in realistic ways, and grades you on how you fix it.** Kubernetes is
+the first track; CI/CD and infrastructure as code are the next ones planned.
 
 ## The problem
 
@@ -58,6 +59,27 @@ Challenge mode adds a timer and costs you points for hints. Results persist,
 and on a shared deployment a team leaderboard turns a game day into something
 people actually want to win.
 
+## Tracks
+
+Content is grouped into tracks, one area of platform work each. Every track
+has free scenarios and incidents, a learning path and a challenge, and runs
+through the same four loops.
+
+| Track | Status | What runs in the lab |
+|---|---|---|
+| **Kubernetes** | Works today | k3d or kind with the full platform stack above |
+| **CI/CD** | Planned, first | A Git forge with an Actions runner and a registry in the cluster, deploying through Argo CD; optionally your own GitHub repository |
+| **Infrastructure as code** | Planned, after CI/CD | OpenTofu with state in an in-cluster S3 store |
+| **Cloud providers** | Later, by demand | Open-source emulators where they exist, then your own sandbox account |
+
+A new track starts only when its free path costs nothing, every tool it
+installs has a licence that allows the use, checks can grade it from outside,
+people have asked for it, and someone maintains it. When a track needs an
+account outside the lab, such as a GitHub repository, you will connect it once
+with `labctl connect` (planned); the token stays in your operating system's
+keychain and faults only ever go into a sandbox account
+([ADR-0017](adr/0017-tracks-and-targets.md)).
+
 ## Who it is for
 
 | User | Primary loop | Success looks like |
@@ -71,7 +93,8 @@ people actually want to win.
 
 1. **Laptop-first.** The golden path is `k3d` on a MacBook, a Linux box or WSL2,
    with no cloud account, no credit card and no network dependency beyond image
-   pulls. If it does not work well there, it does not ship.
+   pulls. If it does not work well there, it does not ship. A track that needs
+   an outside account still has a free path that runs locally.
 2. **Real components, real failures.** We install actual Prometheus, Istio and
    Kafka. Failures are injected into real systems, not mocked, so the signal an
    engineer sees is the real signal.
@@ -119,9 +142,13 @@ See [ADR-0016](adr/0016-hosted-labs-long-term.md) for the reasoning.
 
 ## Not in scope today
 
-- **Cloud runtimes for your own cluster (AKS, EKS, GKE).** Local (`k3d`, `kind`)
-  and `incluster` only. The runtime profile contract would allow a cloud
-  profile later, verified against a real account ([ADR-0001](adr/0001-cut-cloud-and-commercial-scope.md)).
+- **Managed clusters as the lab's runtime (AKS, EKS, GKE).** The lab runs on
+  local `k3d` or `kind`, or `incluster`. The runtime profile contract would
+  allow a cloud profile later, verified against a real account
+  ([ADR-0001](adr/0001-cut-cloud-and-commercial-scope.md)). Cloud providers
+  arrive as tracks instead ([ADR-0017](adr/0017-tracks-and-targets.md)).
+- **Holding your outside-account credentials.** Tokens for accounts a track
+  connects stay on your machine; the project never receives them.
 - **A content marketplace or paid editions.** See above.
 - **A multi-tenant platform in this repository.** The shared in-cluster server
   supports one team on one cluster; it does not isolate tenants from each other.

@@ -1,6 +1,7 @@
 # ADR 0001: Cut cloud runtimes and commercial surfaces
 
-**Status:** Accepted
+**Status:** Accepted. The decision that the lab covers local Kubernetes only is
+superseded by [ADR-0017](0017-tracks-and-targets.md); the rest stands.
 **Date:** 2026-07-26
 **Wave:** W0
 
