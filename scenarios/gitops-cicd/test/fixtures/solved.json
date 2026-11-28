@@ -5,7 +5,7 @@
     "IngressURLSuffix": "snowops.localhost",
     "LokiRetentionPeriod": "168h",
     "MonitoringNamespace": "monitoring",
-    "SinceActivation": "1m",
+    "SinceActivation": "2m",
     "WorkloadMetric": "http_server_request_duration_seconds",
     "WorkloadName": "go-api",
     "WorkloadNamespace": "go-api",
@@ -27,7 +27,7 @@
   "http": {
     "prometheus/api/v1/query?query=count%28argocd_app_info%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793093234.916,\"2\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1795868905.654,\"2\"]}]}}"
     }
   },
   "results": {
