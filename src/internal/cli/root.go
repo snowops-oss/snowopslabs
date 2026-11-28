@@ -186,7 +186,8 @@ func bindWorkload(appName string, explicit bool) error {
 	scriptExec.SetEnv("WORKLOAD_PORT", bound.Port)
 	scriptExec.SetEnv("WORKLOAD_METRIC", bound.Metric)
 
-	scenes = scenario.NewEngine(cfg.ProjectRoot, cfg.DomainSuffix, cfg.Profile)
+	extraRoots := contentRoots()[1:]
+	scenes = scenario.NewEngine(cfg.ProjectRoot, cfg.DomainSuffix, cfg.Profile, extraRoots...)
 	scenes.StateRoot = cfg.StateDir
 	scenes.MonitoringNamespace = cfg.MonitoringNamespace
 	scenes.IngressClass = cfg.IngressClass
@@ -194,7 +195,8 @@ func bindWorkload(appName string, explicit bool) error {
 	scenes.Workload = bound
 	scenes.Contract = boundContract
 
-	incEng = incident.NewEngine(cfg.ProjectRoot, cfg.DomainSuffix)
+	incEng = incident.NewEngine(cfg.ProjectRoot, cfg.DomainSuffix, extraRoots...)
+	incEng.ScenarioActive = scenes.IsActive
 	incEng.StateRoot = cfg.StateDir
 	incEng.IngressURLSuffix = cfg.IngressURLSuffix()
 	incEng.MonitoringNamespace = cfg.MonitoringNamespace

@@ -32,7 +32,7 @@ func newRunEngine(ctx context.Context) (*run.Engine, *store.Store, func(), error
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	resolver, err := toolchain.NewResolver(cfg.ProjectRoot)
+	resolver, err := toolchain.NewResolver(contentRoots()...)
 	if err != nil {
 		_ = st.Close()
 		return nil, nil, nil, err

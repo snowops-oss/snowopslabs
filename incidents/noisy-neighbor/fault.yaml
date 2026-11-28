@@ -4,6 +4,7 @@ displayName: "Noisy neighbor: CPU-hungry tenant"
 description: "You have been paged: the node {{.WorkloadName}} runs on is out of CPU. Nothing you deployed changed (same image, same replicas, same config) and the other two nodes are idle. Something else moved in, and it is taking the machine."
 category: resources
 severity: low
+tags: [slow]
 track: kubernetes
 level: intermediate
 minutes: 15

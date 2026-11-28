@@ -45,7 +45,8 @@ const FOLLOW_LIMIT_MS = 5 * 60_000
  *  read as "this fault only works with go-api". */
 function requiresLabel(f: Fault) {
   const plat = f.prerequisites?.platform ?? []
-  return [...plat, ...(f.pinnedApps ?? [])].join(' · ')
+  const scenarios = (f.prerequisites?.scenarios ?? []).map(s => `scenario ${s}`)
+  return [...scenarios, ...plat, ...(f.pinnedApps ?? [])].join(' · ')
 }
 
 /** Why the detection check failed, without the trailing full stop the banner
@@ -480,6 +481,19 @@ export function Incidents({ notify, requestConfirm, canOperate = true }: Inciden
                   This fault names its workload rather than an application, so it can be injected into any
                   app that meets the contract. Choose one when you inject it, or from the CLI with
                   {' '}<code>--app</code>.
+                </div>
+              </div>
+            )}
+            {(detail.prerequisites?.scenarios?.length ?? 0) > 0 && (
+              <div className="modal-section">
+                <h3>Requires an active scenario</h3>
+                <div className="prereq-chips">
+                  {(detail.prerequisites?.scenarios ?? []).map(sc => (
+                    <Badge key={`s-${sc}`} variant="category">Scenario: {sc}</Badge>
+                  ))}
+                </div>
+                <div className="field-help mt-2">
+                  Activate it in the Scenarios tab first; inject is refused until it is active.
                 </div>
               </div>
             )}

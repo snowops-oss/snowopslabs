@@ -108,6 +108,12 @@ was injected within the window. Use `--exclude oom-kill,cpu-throttling` to skip
 specific named faults that might be problematic for the round. With `--seed`,
 the pick stays the same for labs that share the same incident history.
 
+To practise one kind of page without the whole catalog, pick from a named set:
+`--tag TAG` picks only from faults with that tag (see `tags` in
+[incidents/README.md](../incidents/README.md#tags)), and `--from a,b,c` picks
+only from the faults you list. Both work with `--seed`, `--not-since` and
+`--exclude`, so a set of rounds can draw from one set without repeating.
+
 Give each round 20 to 30 minutes, and decide before you start how many hints
 you allow and whether they cost anything. Hints cost score only when a fault
 runs as a challenge; in a game day they are recorded, and the review shows how

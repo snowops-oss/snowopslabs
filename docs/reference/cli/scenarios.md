@@ -197,8 +197,10 @@ labctl validate --json     # machine-readable, for tooling
 ```
 
 Extra content roots named in `SNOWOPS_CONTENT_PATH` are discovered and
-validated alongside the in-repo content; a later root overrides an earlier one
-on a name collision, so you can add or shadow content without forking. See
+validated alongside the in-repo content, in the same order every command loads
+them. An item whose name an earlier root already uses (the repository comes
+first) is skipped and reported as a problem, so validate fails until it is
+renamed. See
 [R03](../../runbooks/R03-content-authoring-and-validation.md) and
 [ADR-0009](../../adr/0009-content-validation-strategy.md).
 

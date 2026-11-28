@@ -179,51 +179,69 @@ type Engine struct {
 	// {{.IngressURLSuffix}} in intro text, so its URLs match the lab.
 	Expand func(string) string
 
-	learnDir   string
+	// dirs are the learning path directories in precedence order: the
+	// repository's first, then each extra content root's.
+	dirs       []string
 	stateDir   string
 	resultsDir string // directory for the unified results store (empty = disabled)
 	now        func() string
 
 	mu         sync.Mutex
-	loadErrors map[string]error // path directory name → why it failed to load
+	loadErrors map[string]error // path directory → why it failed to load
 }
 
 // New creates an Engine rooted at learnDir with progress persisted in stateDir.
 // resultsDir is the directory for the unified results store (the lab state directory's history/).
-func New(learnDir, stateDir, resultsDir string) *Engine {
+// extraDirs are path directories from extra content roots; a path in learnDir
+// wins a name collision.
+func New(learnDir, stateDir, resultsDir string, extraDirs ...string) *Engine {
 	return &Engine{
-		learnDir:   learnDir,
+		dirs:       append([]string{learnDir}, extraDirs...),
 		stateDir:   stateDir,
 		resultsDir: resultsDir,
 		now:        func() string { return time.Now().Format(time.RFC3339) },
 	}
 }
 
-// Paths returns all valid learning paths discovered under learnDir. A path
-// that fails to load is left out and reported by LoadErrors.
+// Paths returns all valid learning paths discovered in the engine's
+// directories. A path that fails to load is left out and reported by
+// LoadErrors.
 func (e *Engine) Paths() ([]*Path, error) {
-	entries, err := os.ReadDir(e.learnDir)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, err
-	}
 	var paths []*Path
 	failed := make(map[string]error)
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		p, err := e.LoadPath(entry.Name())
+	seen := make(map[string]string) // name → directory it loaded from
+	for i, base := range e.dirs {
+		entries, err := os.ReadDir(base)
 		if errors.Is(err, fs.ErrNotExist) {
-			continue // a directory without path.yaml is not a path
+			continue
 		}
 		if err != nil {
-			failed[entry.Name()] = err
-			continue
+			return nil, err
 		}
-		paths = append(paths, p)
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			dir := filepath.Join(base, entry.Name())
+			key := entry.Name()
+			if i > 0 {
+				key = dir
+			}
+			p, err := e.loadFrom(entry.Name(), dir)
+			if errors.Is(err, fs.ErrNotExist) {
+				continue // a directory without path.yaml is not a path
+			}
+			if err != nil {
+				failed[key] = err
+				continue
+			}
+			if first, ok := seen[entry.Name()]; ok {
+				failed[key] = fmt.Errorf("learning path name %q already provided by %s - skipped", entry.Name(), first)
+				continue
+			}
+			seen[entry.Name()] = dir
+			paths = append(paths, p)
+		}
 	}
 	e.mu.Lock()
 	e.loadErrors = failed
@@ -239,9 +257,21 @@ func (e *Engine) LoadErrors() map[string]error {
 	return maps.Clone(e.loadErrors)
 }
 
-// LoadPath loads and validates a single path by name.
+// LoadPath loads and validates a single path by name, from the first
+// directory that has it.
 func (e *Engine) LoadPath(name string) (*Path, error) {
-	dir := filepath.Join(e.learnDir, name)
+	for _, base := range e.dirs {
+		p, err := e.loadFrom(name, filepath.Join(base, name))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		return p, err
+	}
+	return nil, &notFoundError{name: name}
+}
+
+// loadFrom loads and validates the path in dir.
+func (e *Engine) loadFrom(name, dir string) (*Path, error) {
 	data, err := os.ReadFile(filepath.Join(dir, "path.yaml"))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, &notFoundError{name: name}

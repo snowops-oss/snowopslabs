@@ -136,10 +136,11 @@ func (e *Engine) output() io.Writer {
 	return os.Stdout
 }
 
-// NewEngine creates a scenario engine by scanning the scenarios/ directory.
-// MonitoringNamespace starts as "monitoring"; a caller that uses another
-// namespace sets the field on the returned engine.
-func NewEngine(projectRoot, domainSuffix, profile string) *Engine {
+// NewEngine creates a scenario engine by scanning scenarios/ under the project
+// root, then under each extra content root in order (see
+// catalog.ResolveRoots). MonitoringNamespace starts as "monitoring"; a caller
+// that uses another namespace sets the field on the returned engine.
+func NewEngine(projectRoot, domainSuffix, profile string, extraRoots ...string) *Engine {
 	// Start bound to the default app, with its declared contract, so the
 	// capability check works even if the caller never binds another app.
 	bound := workload.Default(workload.DefaultApp)
@@ -160,7 +161,7 @@ func NewEngine(projectRoot, domainSuffix, profile string) *Engine {
 		loadErrors:          make(map[string]error),
 		StateRoot:           filepath.Join(projectRoot, ".labctl"),
 	}
-	e.scan()
+	e.scan(extraRoots)
 	return e
 }
 
@@ -684,6 +685,7 @@ func (e *Engine) Status() []ScenarioStatus {
 			Runtimes:    s.Runtimes,
 			Active:      e.isActive(s.Name),
 			App:         app,
+			Source:      s.Source,
 		})
 	}
 	sort.Slice(result, func(i, j int) bool {
@@ -725,20 +727,40 @@ type ScenarioStatus struct {
 	// App is the workload this scenario runs against: the one it was activated
 	// against if it is active, otherwise the current binding.
 	App string `json:"app,omitempty"`
+	// Source is the extra content root the scenario came from; empty means
+	// the repository.
+	Source string `json:"source,omitempty"`
 }
 
-func (e *Engine) scan() {
-	// In-repo scenarios are loaded first. Scenarios from SNOWOPS_CONTENT_PATH
-	// roots come after and cannot replace one with the same name.
-	scenariosDir := filepath.Join(e.ProjectRoot, "scenarios")
-	if entries, err := os.ReadDir(scenariosDir); err == nil {
-		for _, entry := range entries {
-			// "_"-prefixed directories hold shared scripts, not scenarios.
-			if !entry.IsDir() || strings.HasPrefix(entry.Name(), "_") {
-				continue
-			}
-			e.loadInto(filepath.Join(scenariosDir, entry.Name()), "", entry.Name())
+// scan loads in-repo scenarios first, then each extra root's. A scenario from
+// an extra root cannot replace one already loaded with the same name.
+func (e *Engine) scan(extraRoots []string) {
+	e.scanRoot(e.ProjectRoot, "")
+	for _, root := range extraRoots {
+		e.scanRoot(root, root)
+	}
+}
+
+// scanRoot loads every scenario under root/scenarios, recording source as
+// their Source. In-repo failures are keyed by directory name, extra-root
+// ones by full directory path so the warning names the root.
+func (e *Engine) scanRoot(root, source string) {
+	scenariosDir := filepath.Join(root, "scenarios")
+	entries, err := os.ReadDir(scenariosDir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		// "_"-prefixed directories hold shared scripts, not scenarios.
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), "_") {
+			continue
 		}
+		dir := filepath.Join(scenariosDir, entry.Name())
+		key := entry.Name()
+		if source != "" {
+			key = dir
+		}
+		e.loadInto(dir, source, key)
 	}
 }
 
@@ -1335,6 +1357,9 @@ func lokiRetentionPeriod() string {
 	}
 	return hours + "h"
 }
+
+// IsActive reports whether the named scenario is active on this lab.
+func (e *Engine) IsActive(name string) bool { return e.isActive(name) }
 
 func (e *Engine) isActive(name string) bool {
 	statePath := filepath.Join(e.stateDir(), name+".active")

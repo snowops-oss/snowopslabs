@@ -799,15 +799,20 @@ labctl scenario list        # yours appear, badged as external
 ```
 
 `SNOWOPS_CONTENT_PATH` accepts several roots separated by the OS path
-separator.
+separator. Each root may hold any of `scenarios/`, `incidents/`, `learn/` and
+`challenges/`, laid out as in the repository.
 
-- Each root is scanned for directories containing a `scenario.yaml`, and every
-  one is schema-validated. An invalid scenario is reported by name and skipped;
-  it never hides the rest.
-- External scenarios work with `up`, `down`, `verify` and `info` exactly like
-  in-repo ones, and show their root in the SOURCE column of `scenario list`.
-- **In-repo scenarios win name collisions.** A colliding external scenario is
-  skipped, with the conflict named.
+- Every root is scanned for items, and every one is schema-validated. An
+  invalid item is reported by name and skipped; it never hides the rest.
+- External content works with every command, the web UI and the API exactly
+  like in-repo content: `scenario up`, `incident inject`, `challenge start`,
+  `learn start` and the rest. Their scripts run from their own root.
+- External scenarios show their root in the SOURCE column of `scenario list`,
+  in the `source` field of `scenario list -o json` and `GET /api/v2/scenarios`,
+  and as an External badge in the web UI.
+- **The repository wins name collisions, then earlier roots.** A colliding
+  item is skipped and the list command warns with its directory;
+  `labctl validate` reports it as a problem.
 
 > **Security.** A scenario's components run scripts and apply manifests on your
 > cluster with your credentials. Only point `SNOWOPS_CONTENT_PATH` at sources

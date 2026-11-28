@@ -78,6 +78,7 @@ var knownProblemSlugs = []string{
 	"no_more_hints",
 	"not_found",
 	"path_not_started",
+	"prerequisite_missing",
 	"recovery_required",
 	"request_too_large",
 	"resolve_failed",

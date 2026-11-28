@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/snowops-oss/snowopslabs/internal/catalog"
+
 	"github.com/snowops-oss/snowopslabs/internal/challenge"
 	chalsvc "github.com/snowops-oss/snowopslabs/internal/service/challenge"
 	"github.com/snowops-oss/snowopslabs/pkg/checks"
@@ -40,11 +42,12 @@ and how many hints you needed.`,
 var errNoActiveChallenge = errors.New("no active challenge - start one with `labctl challenge start <name>`")
 
 func challengeEngine() *challenge.Engine {
-	root := cfg.ProjectRoot
+	dirs := catalog.KindDirs(contentRoots(), catalog.KindChallenge)
 	return challenge.New(
-		filepath.Join(root, "challenges"),
+		dirs[0],
 		filepath.Join(cfg.StateDir, "challenges"),
 		filepath.Join(cfg.StateDir, "history"),
+		dirs[1:]...,
 	)
 }
 

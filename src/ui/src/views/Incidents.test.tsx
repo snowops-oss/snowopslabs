@@ -239,6 +239,24 @@ describe('Incidents view', () => {
     expect(within(row).getByText(/Requires:\s*ingress$/)).toBeInTheDocument()
   })
 
+  it('names the scenario a fault needs, in the row and in its details', async () => {
+    serveIncidents({
+      faults: [fault('argocd-hook-stuck', {
+        prerequisites: { platform: [], apps: [], scenarios: ['gitops-cicd'] },
+        pinnedApps: [],
+      })],
+      active: null,
+    })
+    renderIncidents()
+    const user = userEvent.setup()
+    const row = (await screen.findByText('argocd-hook-stuck')).closest('.scenario-row') as HTMLElement
+    expect(within(row).getByText(/Requires:\s*scenario gitops-cicd$/)).toBeInTheDocument()
+    await user.click(within(row).getByRole('button', { name: 'Details' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Scenario: gitops-cicd')).toBeInTheDocument()
+    expect(within(dialog).getByText(/inject is refused until it is active/)).toBeInTheDocument()
+  })
+
   it('opens a fault’s details and closes them on a click outside', async () => {
     serveContract()
     renderIncidents()

@@ -135,3 +135,33 @@ func TestLoad_ReferenceRequiresURL(t *testing.T) {
 	c, _ := Load(root)
 	findProblem(t, c.Problems(), "url is required")
 }
+
+// A fault's prerequisite scenarios must exist; a known one is no problem.
+func TestCrossReference_FaultScenarioPrerequisite(t *testing.T) {
+	tests := []struct {
+		name    string
+		extra   string
+		wantErr string
+	}{
+		{name: "a known scenario", extra: "  scenarios: [s1]\n"},
+		{name: "an unknown scenario", extra: "  scenarios: [ghost]\n", wantErr: `prerequisites.scenarios references unknown scenario "ghost"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := validRoot(t)
+			write(t, root, "incidents", "i1", "fault.yaml", validIncident+"prerequisites:\n"+tt.extra)
+			c, _ := Load(root)
+			var msgs []string
+			for _, p := range c.Problems() {
+				msgs = append(msgs, p.String())
+			}
+			joined := strings.Join(msgs, "\n")
+			if tt.wantErr == "" && joined != "" {
+				t.Fatalf("unexpected problems:\n%s", joined)
+			}
+			if tt.wantErr != "" && !strings.Contains(joined, tt.wantErr) {
+				t.Fatalf("problems %q do not contain %q", joined, tt.wantErr)
+			}
+		})
+	}
+}

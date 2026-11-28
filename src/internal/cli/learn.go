@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/snowops-oss/snowopslabs/internal/catalog"
+
 	"github.com/snowops-oss/snowopslabs/internal/labcheck"
 	"github.com/snowops-oss/snowopslabs/internal/learn"
 	schema "github.com/snowops-oss/snowopslabs/pkg/scenario"
@@ -29,11 +31,12 @@ scenarios, and incidents into structured modules with verifiable completion chec
 }
 
 func learnEngine() *learn.Engine {
-	root := cfg.ProjectRoot
+	dirs := catalog.KindDirs(contentRoots(), catalog.KindPath)
 	eng := learn.New(
-		filepath.Join(root, "learn"),
+		dirs[0],
 		filepath.Join(cfg.StateDir, "learn"),
 		filepath.Join(cfg.StateDir, "history"),
+		dirs[1:]...,
 	)
 	if incEng != nil {
 		eng.Expand = incEng.ResolveTemplate

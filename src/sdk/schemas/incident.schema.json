@@ -20,6 +20,7 @@
       "enum": ["workload", "network", "resources", "storage", "config"]
     },
     "severity": { "type": "string", "enum": ["low", "medium", "high"] },
+    "tags": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" }, "description": "Named sets the fault belongs to, for `incident inject --random --tag`." },
     "track": { "type": "string", "enum": ["kubernetes", "cicd", "iac"], "description": "Area of platform work. Absent means kubernetes." },
     "level": { "type": "string", "enum": ["beginner", "intermediate", "advanced"], "description": "Difficulty. Absent means intermediate." },
     "minutes": { "type": "integer", "minimum": 0, "description": "Expected time in minutes. 0 means not stated." },
@@ -40,7 +41,8 @@
       "additionalProperties": false,
       "properties": {
         "platform": { "type": "array", "items": { "type": "string" }, "description": "Platform components that must be installed first (e.g. \"ingress\" when detection calls the app through the ingress). Not auto-installed." },
-        "apps": { "type": "array", "items": { "type": "string" } }
+        "apps": { "type": "array", "items": { "type": "string" } },
+        "scenarios": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" }, "description": "Scenarios that must be active before the fault can be injected. Never activated for the learner." }
       }
     },
     "detection": { "$ref": "check.schema.json" },

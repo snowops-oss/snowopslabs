@@ -3,6 +3,7 @@
 package httpapi
 
 import (
+	"github.com/snowops-oss/snowopslabs/internal/catalog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -62,9 +63,13 @@ func contractServer(t *testing.T, lab *labtest.Lab) *Server {
 		IngressProvider: "traefik", MetricsProvider: "prometheus",
 		LoggingProvider: "loki", TracingProvider: "tempo",
 	}
+	// The engines read the same roots as labctl's own wiring.
+	extra := catalog.ResolveRoots(root)[1:]
+	scenes := scenario.NewEngine(root, cfg.DomainSuffix, cfg.Profile, extra...)
+	incidents := incident.NewEngine(root, cfg.DomainSuffix, extra...)
+	incidents.ScenarioActive = scenes.IsActive
 	s := NewServer(cfg, executor.New(root), platform.NewRegistry(root),
-		scenario.NewEngine(root, cfg.DomainSuffix, cfg.Profile),
-		incident.NewEngine(root, cfg.DomainSuffix),
+		scenes, incidents,
 		services.NewRegistry(root), runtime.NewManager(root, cfg.ClusterName),
 		nil, WithRunStore(st))
 	s.docker = toolchain.NewFake()

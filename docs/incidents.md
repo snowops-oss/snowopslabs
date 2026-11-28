@@ -28,6 +28,8 @@ labctl incident inject --random --silent                           # a surprise 
 labctl incident inject --random --seed 42                          # the same pick for everyone on the team
 labctl incident inject --random --not-since 1h                     # skip faults from the last hour
 labctl incident inject --random --exclude oom-kill,cpu-throttling  # skip named faults
+labctl incident inject --random --tag app-down                     # pick only faults with this tag
+labctl incident inject --random --from oom-kill,cpu-throttling     # pick only from these faults
 ```
 
 [Running a game day](game-day.md) covers a whole team session on one shared
