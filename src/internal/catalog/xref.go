@@ -16,7 +16,8 @@ import (
 // crossReference checks integrity between items after every item is loaded: a
 // learning path or challenge that points at a scenario or incident must point at
 // one that actually exists, and a challenge that grades on the detection check
-// must set up an incident (only incidents have one).
+// must set up an incident (only incidents have one). A fault's prerequisite
+// scenarios must exist too.
 func (c *Catalog) crossReference() {
 	for _, p := range c.paths {
 		key := sourceKey(KindPath, p.Name)
@@ -59,6 +60,16 @@ func (c *Catalog) crossReference() {
 				Kind: KindChallenge, Name: ch.Name, File: file,
 				Message: "grading.useDetectionCheck requires setup.type: incident (only incidents have a detection check)",
 			})
+		}
+	}
+
+	for _, f := range c.incidents {
+		key := sourceKey(KindIncident, f.Name)
+		for _, ref := range f.Prerequisites.Scenarios {
+			if _, ok := c.scenarios[ref]; !ok {
+				c.refProblem(KindIncident, f.Name, c.sources[key], c.nodes[key], ref,
+					fmt.Sprintf("prerequisites.scenarios references unknown scenario %q", ref))
+			}
 		}
 	}
 

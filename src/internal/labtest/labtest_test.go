@@ -13,13 +13,15 @@ import (
 
 func TestNew_BuildsAnIsolatedLab(t *testing.T) {
 	t.Setenv("CLUSTER_NAME", "the-developers-own-cluster")
-	// The kubeconfig a developer's shell holds, and the one labctl records for
-	// its runtime scripts, must not reach a command under test.
-	for _, k := range []string{"KUBECONFIG", "SNOWOPS_USER_KUBECONFIG", "KUBECONFIG_CONTEXT"} {
+	// The kubeconfig a developer's shell holds, the one labctl records for
+	// its runtime scripts, and the developer's own extra content roots must
+	// not reach a command under test.
+	leaky := []string{"KUBECONFIG", "SNOWOPS_USER_KUBECONFIG", "KUBECONFIG_CONTEXT", "SNOWOPS_CONTENT_PATH"}
+	for _, k := range leaky {
 		t.Setenv(k, "/the/developers/own/"+k)
 	}
 	l := New(t)
-	for _, k := range []string{"KUBECONFIG", "SNOWOPS_USER_KUBECONFIG", "KUBECONFIG_CONTEXT"} {
+	for _, k := range leaky {
 		if got := os.Getenv(k); got != "" {
 			t.Errorf("%s = %q leaked from the caller's environment", k, got)
 		}

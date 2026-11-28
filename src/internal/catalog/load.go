@@ -29,7 +29,8 @@ var kindLayout = map[Kind]struct{ dir, file string }{
 }
 
 // Load builds a validated snapshot from the given content roots. When two roots
-// define an item with the same name, the later root wins. Content errors are
+// define an item with the same name, the earlier root wins and the later item
+// is a problem, matching how the engines load content. Content errors are
 // collected in the Catalog's Problems rather than stopping the load; the
 // returned error is only for a root that cannot be read.
 func Load(roots ...string) (*Catalog, error) {
@@ -184,10 +185,17 @@ func (c *Catalog) checkName(kind Kind, dirName, declared, file string, doc *yaml
 }
 
 // index stores the item with its source file and YAML document. An item with
-// the same name from a later root replaces the earlier one without a problem
-// being reported, which is how external roots override in-repo content.
+// the same name as one from an earlier root is skipped and reported, since
+// every engine keeps the earlier one too.
 func (c *Catalog) index(kind Kind, name, file string, doc *yaml.Node, store func()) {
 	key := sourceKey(kind, name)
+	if first, ok := c.sources[key]; ok {
+		c.problems = append(c.problems, Problem{
+			Kind: kind, Name: name, File: file,
+			Message: fmt.Sprintf("name %q already provided by %s; this copy is skipped - rename it to load both", name, filepath.Dir(first)),
+		})
+		return
+	}
 	c.sources[key] = file
 	c.nodes[key] = doc
 	store()

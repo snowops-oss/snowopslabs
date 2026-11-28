@@ -38,6 +38,12 @@ function allComponents(s: Pick<Scenario, 'components' | 'stages'> | null | undef
   return (s.stages ?? []).flatMap(st => st.components ?? [])
 }
 
+/** The last directory of an extra content root, which names it well enough
+ *  in a badge; `labctl scenario list` shows the full path. */
+function sourceLabel(root: string) {
+  return root.replace(/\/+$/, '').split('/').pop() || root
+}
+
 export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
   const { data: scenarios = [], loading, loaded, loadError, refreshing, reload: load } = useApiQuery(qk.scenarios, api.listScenarios)
   const [filter, setFilter] = useState('')
@@ -271,6 +277,7 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
                       {requirementLabels(s.requirements).map(label => (
                         <Badge key={label} variant="pending">{label}</Badge>
                       ))}
+                      {s.source && <Badge variant="pending">External: {sourceLabel(s.source)}</Badge>}
                     </div>
                   </div>
                   <Badge variant={s.active ? 'running' : 'stopped'}>{s.active ? 'Active' : 'Inactive'}</Badge>

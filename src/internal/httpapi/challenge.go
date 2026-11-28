@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/snowops-oss/snowopslabs/internal/catalog"
+
 	"github.com/snowops-oss/snowopslabs/internal/challenge"
 	"github.com/snowops-oss/snowopslabs/internal/incident"
 	"github.com/snowops-oss/snowopslabs/internal/scenario"
@@ -19,10 +21,12 @@ import (
 )
 
 func challengeEngine(s *Server) *challenge.Engine {
+	dirs := catalog.KindDirs(catalog.ResolveRoots(s.cfg.ProjectRoot), catalog.KindChallenge)
 	return challenge.New(
-		filepath.Join(s.cfg.ProjectRoot, "challenges"),
+		dirs[0],
 		filepath.Join(s.cfg.StateDir, "challenges"),
 		filepath.Join(s.cfg.StateDir, "history"),
+		dirs[1:]...,
 	)
 }
 

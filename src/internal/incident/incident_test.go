@@ -295,21 +295,21 @@ func TestResolve_EscapeHatch(t *testing.T) {
 func TestPickRandom(t *testing.T) {
 	e, _ := testEngine(t, "fault-a", "fault-b", "fault-c")
 
-	first, err := e.PickRandom(42, "", 0, nil)
+	first, err := e.PickRandom(Pick{Seed: 42})
 	if err != nil {
 		t.Fatalf("PickRandom: %v", err)
 	}
 	for range 5 {
-		again, _ := e.PickRandom(42, "", 0, nil)
+		again, _ := e.PickRandom(Pick{Seed: 42})
 		if again.Name != first.Name {
 			t.Fatalf("seeded pick must be deterministic: %q vs %q", again.Name, first.Name)
 		}
 	}
 
-	if _, err := e.PickRandom(1, "network", 0, nil); err == nil {
+	if _, err := e.PickRandom(Pick{Seed: 1, Category: "network"}); err == nil {
 		t.Fatal("no eligible faults in category network - expected error")
 	}
-	if f, err := e.PickRandom(1, "workload", 0, nil); err != nil || f == nil {
+	if f, err := e.PickRandom(Pick{Seed: 1, Category: "workload"}); err != nil || f == nil {
 		t.Fatalf("category filter: %v", err)
 	}
 }
@@ -320,7 +320,7 @@ func TestPickRandom_NoEligible(t *testing.T) {
 	root := t.TempDir() // prereq app missing
 	writeFault(t, root, "fault-a")
 	e := NewEngine(root, "k3d.local")
-	if _, err := e.PickRandom(1, "", time.Hour, []string{"fault-a"}); err == nil || !strings.Contains(err.Error(), "are the demo apps deployed?") {
+	if _, err := e.PickRandom(Pick{Seed: 1, NotSince: time.Hour, Exclude: []string{"fault-a"}}); err == nil || !strings.Contains(err.Error(), "are the demo apps deployed?") {
 		t.Fatalf("err = %v, want the no-eligible error that asks about the demo apps", err)
 	}
 }
@@ -364,14 +364,14 @@ func TestPickRandom_Filters(t *testing.T) {
 				writeHistoryRecord(t, e, f, 24*time.Hour)
 			}
 			if tt.wantErr != "" {
-				if _, err := e.PickRandom(1, "", tt.notSince, tt.exclude); err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				if _, err := e.PickRandom(Pick{Seed: 1, NotSince: tt.notSince, Exclude: tt.exclude}); err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("err = %v, want it to say %q", err, tt.wantErr)
 				}
 				return
 			}
 			picked := map[string]bool{}
 			for seed := int64(1); seed <= 50; seed++ {
-				f, err := e.PickRandom(seed, "", tt.notSince, tt.exclude)
+				f, err := e.PickRandom(Pick{Seed: seed, NotSince: tt.notSince, Exclude: tt.exclude})
 				if err != nil {
 					t.Fatalf("seed %d: %v", seed, err)
 				}
@@ -392,7 +392,7 @@ func TestPickRandom_NotSinceExcludesActive(t *testing.T) {
 	if _, err := e.Inject("fault-a", ex, false, false); err != nil {
 		t.Fatalf("Inject fault-a: %v", err)
 	}
-	f, err := e.PickRandom(42, "", time.Hour, nil)
+	f, err := e.PickRandom(Pick{Seed: 42, NotSince: time.Hour})
 	if err != nil {
 		t.Fatalf("PickRandom with notSince: %v", err)
 	}
@@ -403,7 +403,7 @@ func TestPickRandom_NotSinceExcludesActive(t *testing.T) {
 	if _, err := e.Resolve("", ex, ""); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	f, err = e.PickRandom(42, "", time.Hour, nil)
+	f, err = e.PickRandom(Pick{Seed: 42, NotSince: time.Hour})
 	if err != nil {
 		t.Fatalf("PickRandom after resolve: %v", err)
 	}
@@ -412,9 +412,9 @@ func TestPickRandom_NotSinceExcludesActive(t *testing.T) {
 	}
 }
 
-// The CLI and the HTTP API both read the filters through ParsePickFilters, so
-// they give the same answer to the same input.
-func TestParsePickFilters(t *testing.T) {
+// The CLI and the HTTP API both read the filters through ParsePick, so they
+// give the same answer to the same input.
+func TestParsePick(t *testing.T) {
 	e, _ := testEngine(t, "fault-a", "fault-b", "fault-c")
 	tests := []struct {
 		name         string
@@ -433,7 +433,8 @@ func TestParsePickFilters(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			notSince, exclude, err := e.ParsePickFilters(tt.notSince, tt.exclude)
+			p, err := e.ParsePick(PickInput{NotSince: tt.notSince, Exclude: tt.exclude})
+			notSince, exclude := p.NotSince, p.Exclude
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("err = %v, want it to say %q", err, tt.wantErr)

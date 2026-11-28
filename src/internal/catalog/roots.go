@@ -10,8 +10,8 @@ import (
 
 // ContentPathEnv is the environment variable naming extra content roots,
 // separated by the OS path-list separator (":" on Unix). Roots listed here are
-// loaded after the in-repo root, so an external root can add new content or
-// shadow in-repo items of the same name without forking the repository.
+// loaded after the in-repo root, so an external root adds content without
+// forking the repository. An item whose name is already taken is skipped.
 const ContentPathEnv = "SNOWOPS_CONTENT_PATH"
 
 // ResolveRoots returns the ordered content roots to load: the project root
@@ -51,4 +51,14 @@ func cleanAbs(p string) string {
 		return abs
 	}
 	return filepath.Clean(p)
+}
+
+// KindDirs returns kind's directory (such as challenges/) under each root, in
+// the same order as roots.
+func KindDirs(roots []string, kind Kind) []string {
+	dirs := make([]string, len(roots))
+	for i, root := range roots {
+		dirs[i] = filepath.Join(root, kindLayout[kind].dir)
+	}
+	return dirs
 }

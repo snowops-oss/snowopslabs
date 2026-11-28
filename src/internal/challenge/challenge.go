@@ -181,51 +181,68 @@ type RunRecord struct {
 
 // Engine manages challenges.
 type Engine struct {
-	challengeDir string
-	stateDir     string
-	resultsDir   string // directory for the unified results store
-	now          func() time.Time
+	// dirs are the challenge directories in precedence order: the
+	// repository's first, then each extra content root's.
+	dirs       []string
+	stateDir   string
+	resultsDir string // directory for the unified results store
+	now        func() time.Time
 
 	mu         sync.Mutex
-	loadErrors map[string]error // challenge directory name → why it failed to load
+	loadErrors map[string]error // challenge directory → why it failed to load
 }
 
 // New creates an Engine. resultsDir is the directory holding results.jsonl
 // (usually the lab state directory's history/); pass "" to skip writing results records.
-func New(challengeDir, stateDir, resultsDir string) *Engine {
+// extraDirs are challenge directories from extra content roots; a challenge in
+// challengeDir wins a name collision.
+func New(challengeDir, stateDir, resultsDir string, extraDirs ...string) *Engine {
 	return &Engine{
-		challengeDir: challengeDir,
-		stateDir:     stateDir,
-		resultsDir:   resultsDir,
-		now:          time.Now,
+		dirs:       append([]string{challengeDir}, extraDirs...),
+		stateDir:   stateDir,
+		resultsDir: resultsDir,
+		now:        time.Now,
 	}
 }
 
 // Challenges returns all valid challenges. A challenge that fails to load is
 // left out and reported by LoadErrors.
 func (e *Engine) Challenges() ([]*Challenge, error) {
-	entries, err := os.ReadDir(e.challengeDir)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, err
-	}
 	var out []*Challenge
 	failed := make(map[string]error)
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		c, err := e.Load(entry.Name())
+	seen := make(map[string]string) // name → directory it loaded from
+	for i, base := range e.dirs {
+		entries, err := os.ReadDir(base)
 		if errors.Is(err, fs.ErrNotExist) {
-			continue // a directory without challenge.yaml is not a challenge
+			continue
 		}
 		if err != nil {
-			failed[entry.Name()] = err
-			continue
+			return nil, err
 		}
-		out = append(out, c)
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			dir := filepath.Join(base, entry.Name())
+			key := entry.Name()
+			if i > 0 {
+				key = dir
+			}
+			c, err := e.loadFrom(entry.Name(), dir)
+			if errors.Is(err, fs.ErrNotExist) {
+				continue // a directory without challenge.yaml is not a challenge
+			}
+			if err != nil {
+				failed[key] = err
+				continue
+			}
+			if first, ok := seen[entry.Name()]; ok {
+				failed[key] = fmt.Errorf("challenge name %q already provided by %s - skipped", entry.Name(), first)
+				continue
+			}
+			seen[entry.Name()] = dir
+			out = append(out, c)
+		}
 	}
 	e.mu.Lock()
 	e.loadErrors = failed
@@ -241,9 +258,21 @@ func (e *Engine) LoadErrors() map[string]error {
 	return maps.Clone(e.loadErrors)
 }
 
-// Load loads and validates a single challenge by name.
+// Load loads and validates a single challenge by name, from the first
+// directory that has it.
 func (e *Engine) Load(name string) (*Challenge, error) {
-	dir := filepath.Join(e.challengeDir, name)
+	for _, base := range e.dirs {
+		c, err := e.loadFrom(name, filepath.Join(base, name))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		return c, err
+	}
+	return nil, &notFoundError{name: name}
+}
+
+// loadFrom loads and validates the challenge in dir.
+func (e *Engine) loadFrom(name, dir string) (*Challenge, error) {
 	data, err := os.ReadFile(filepath.Join(dir, "challenge.yaml"))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, &notFoundError{name: name}

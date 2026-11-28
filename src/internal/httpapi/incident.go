@@ -89,8 +89,12 @@ func (s *Server) handleIncidentInject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIncidentInjectRandom(w http.ResponseWriter, r *http.Request) {
-	seed, _ := strconv.ParseInt(r.URL.Query().Get("seed"), 10, 64)
-	notSince, exclude, err := s.incidents.ParsePickFilters(r.URL.Query().Get("not-since"), r.URL.Query()["exclude"])
+	q := r.URL.Query()
+	seed, _ := strconv.ParseInt(q.Get("seed"), 10, 64)
+	pick, err := s.incidents.ParsePick(incident.PickInput{
+		Seed: seed, Category: q.Get("category"), Tag: q.Get("tag"),
+		NotSince: q.Get("not-since"), From: q["from"], Exclude: q["exclude"],
+	})
 	if err != nil {
 		respondError(w, r, http.StatusBadRequest, "invalid_input", err.Error())
 		return
@@ -98,7 +102,7 @@ func (s *Server) handleIncidentInjectRandom(w http.ResponseWriter, r *http.Reque
 	// The pick runs on the engine bound to the requested app: which faults are
 	// eligible depends on the workload they would break.
 	s.injectAndRespond(w, r, func(bound *incident.Engine) (string, bool) {
-		f, err := bound.PickRandom(seed, r.URL.Query().Get("category"), notSince, exclude)
+		f, err := bound.PickRandom(pick)
 		if err != nil {
 			respondError(w, r, http.StatusConflict, "no_eligible_fault", err.Error())
 			return "", false
@@ -138,6 +142,8 @@ func (s *Server) injectAndRespond(w http.ResponseWriter, r *http.Request, pick f
 		switch {
 		case errors.Is(err, incident.ErrIncidentActive):
 			respondError(w, r, http.StatusConflict, "incident_active", err.Error())
+		case errors.Is(err, incident.ErrPrerequisite):
+			respondError(w, r, http.StatusConflict, "prerequisite_missing", err.Error())
 		case f == nil:
 			respondError(w, r, http.StatusNotFound, "not_found", err.Error())
 		default:

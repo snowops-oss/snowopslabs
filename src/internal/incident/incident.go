@@ -13,6 +13,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -47,6 +48,10 @@ func ActiveError(a *Active) error {
 // ErrNoActive is returned when an operation needs an active incident.
 var ErrNoActive = errors.New("no incident is active")
 
+// ErrPrerequisite marks an inject refused because something the fault needs,
+// an app or an active scenario, is missing.
+var ErrPrerequisite = errors.New("preflight failed")
+
 // Fault is the parsed fault.yaml of one incident.
 type Fault struct {
 	Name        string `yaml:"name" json:"name"`
@@ -54,9 +59,12 @@ type Fault struct {
 	Description string `yaml:"description" json:"description"`
 	// Verified marks a fault that has been tested end to end on a fresh
 	// cluster.
-	Verified      bool   `yaml:"verified,omitempty" json:"verified"`
-	Category      string `yaml:"category" json:"category"` // workload | network | resources | storage | config
-	Severity      string `yaml:"severity" json:"severity"` // low | medium | high
+	Verified bool   `yaml:"verified,omitempty" json:"verified"`
+	Category string `yaml:"category" json:"category"` // workload | network | resources | storage | config
+	Severity string `yaml:"severity" json:"severity"` // low | medium | high
+	// Tags group faults into named sets, so a random pick can draw from one
+	// set (`incident inject --random --tag`).
+	Tags          []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 	scenario.Meta `yaml:",inline"`
 	// Needs lists the targets the fault requires; see scenario.Needs.
 	scenario.Needs `yaml:",inline"`
@@ -101,10 +109,16 @@ type Target struct {
 // Prerequisites name what must already be installed for the fault to work,
 // such as "ingress" when the detection check calls the app through it.
 // `incident inject --deploy-prereqs` installs them; the UI lists them.
+// Scenarios must be active before injection; they are never activated for the
+// learner, since a scenario sets up more than the fault needs to know about.
 type Prerequisites struct {
-	Platform []string `yaml:"platform,omitempty" json:"platform,omitempty"`
-	Apps     []string `yaml:"apps" json:"apps"`
+	Platform  []string `yaml:"platform,omitempty" json:"platform,omitempty"`
+	Apps      []string `yaml:"apps" json:"apps"`
+	Scenarios []string `yaml:"scenarios,omitempty" json:"scenarios,omitempty"`
 }
+
+// validName is the form of a fault, tag or scenario name.
+var validName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 var validCategories = map[string]bool{
 	"workload": true, "network": true, "resources": true, "storage": true, "config": true,
@@ -135,6 +149,16 @@ func (f *Fault) Validate() error {
 	}
 	if !validSeverities[f.Severity] {
 		add("unknown severity %q (expected low | medium | high)", f.Severity)
+	}
+	for _, tag := range f.Tags {
+		if !validName.MatchString(tag) {
+			add("tag %q must be lowercase letters, digits and dashes", tag)
+		}
+	}
+	for _, sc := range f.Prerequisites.Scenarios {
+		if !validName.MatchString(sc) {
+			add("prerequisite scenario %q is not a scenario name", sc)
+		}
 	}
 	if f.Target.Namespace == "" || f.Target.Workload == "" {
 		add("target.namespace and target.workload are required")
@@ -199,6 +223,9 @@ type Engine struct {
 	// Admit, when set, is asked before a fault is injected whether the lab
 	// has room for it; an error blocks the injection.
 	Admit AdmitFunc
+	// ScenarioActive reports whether a scenario is active, for faults with
+	// prerequisites.scenarios. When nil, no scenario counts as active.
+	ScenarioActive func(name string) bool
 
 	// AlertmanagerURL is where Status queries fired alerts.
 	// Callers set it from ALERTMANAGER_URL or the ingress default.
@@ -220,8 +247,9 @@ type Engine struct {
 	injectedAt time.Time
 }
 
-// NewEngine scans incidents/ under the project root.
-func NewEngine(projectRoot, domainSuffix string) *Engine {
+// NewEngine scans incidents/ under the project root, then under each extra
+// content root in order (see catalog.ResolveRoots).
+func NewEngine(projectRoot, domainSuffix string, extraRoots ...string) *Engine {
 	e := &Engine{
 		ProjectRoot:         projectRoot,
 		DomainSuffix:        domainSuffix,
@@ -232,12 +260,18 @@ func NewEngine(projectRoot, domainSuffix string) *Engine {
 		loadErrors:          make(map[string]error),
 		StateRoot:           filepath.Join(projectRoot, ".labctl"),
 	}
-	e.scan()
+	e.scanRoot(projectRoot, false)
+	for _, root := range extraRoots {
+		e.scanRoot(root, true)
+	}
 	return e
 }
 
-func (e *Engine) scan() {
-	dir := filepath.Join(e.ProjectRoot, "incidents")
+// scanRoot loads every fault under root/incidents. A fault from an extra root
+// cannot replace one already loaded with the same name. Extra-root failures
+// are keyed by full directory path, so the warning names the root.
+func (e *Engine) scanRoot(root string, extra bool) {
+	dir := filepath.Join(root, "incidents")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
@@ -248,13 +282,21 @@ func (e *Engine) scan() {
 			continue
 		}
 		faultDir := filepath.Join(dir, entry.Name())
+		key := entry.Name()
+		if extra {
+			key = faultDir
+		}
 		f, err := loadFault(faultDir)
 		if err != nil {
-			e.loadErrors[entry.Name()] = err
+			e.loadErrors[key] = err
 			continue
 		}
 		if f.Name != entry.Name() {
-			e.loadErrors[entry.Name()] = fmt.Errorf("fault name %q must match its directory name %q", f.Name, entry.Name())
+			e.loadErrors[key] = fmt.Errorf("fault name %q must match its directory name %q", f.Name, entry.Name())
+			continue
+		}
+		if existing, ok := e.faults[f.Name]; ok {
+			e.loadErrors[key] = fmt.Errorf("fault name %q already provided by %s - skipped", f.Name, existing.Dir)
 			continue
 		}
 		e.faults[f.Name] = f
@@ -518,8 +560,13 @@ func (e *Engine) preflight(f *Fault) error {
 			errs = append(errs, fmt.Sprintf("prerequisite app %q not found (expected %s)", app, appEnv))
 		}
 	}
+	for _, sc := range f.Prerequisites.Scenarios {
+		if e.ScenarioActive == nil || !e.ScenarioActive(sc) {
+			errs = append(errs, fmt.Sprintf("scenario %q must be active: run 'labctl scenario up %s' first", sc, sc))
+		}
+	}
 	if len(errs) > 0 {
-		return fmt.Errorf("preflight failed for fault %q:\n  - %s", f.Name, strings.Join(errs, "\n  - "))
+		return fmt.Errorf("%w for fault %q:\n  - %s", ErrPrerequisite, f.Name, strings.Join(errs, "\n  - "))
 	}
 	return nil
 }
@@ -621,27 +668,43 @@ func (e *Engine) Eligible() []*Fault {
 	return out
 }
 
-// PickRandom picks a random eligible fault, optionally from one category. A
-// non-zero seed makes the pick repeatable, so a team can all get the same one.
-// It skips the faults named in exclude and, when notSince is set, every fault
-// injected within that window, the active one included.
-func (e *Engine) PickRandom(seed int64, category string, notSince time.Duration, exclude []string) (*Fault, error) {
+// Pick narrows a random pick. Every set field applies together.
+type Pick struct {
+	// Seed makes the pick repeatable, so a team can all get the same fault.
+	// Zero means a new pick each time.
+	Seed     int64
+	Category string
+	// Tag keeps only faults with this tag.
+	Tag string
+	// From keeps only these faults, by name.
+	From []string
+	// Exclude skips these faults, by name.
+	Exclude []string
+	// NotSince skips every fault injected within this window, the active one
+	// included.
+	NotSince time.Duration
+}
+
+// PickRandom picks a random eligible fault within p. The pool is sorted by
+// name before the pick, so a seed gives the same fault on every lab with the
+// same content and history.
+func (e *Engine) PickRandom(p Pick) (*Fault, error) {
 	var pool []*Fault
 	for _, f := range e.Eligible() {
-		if category == "" || f.Category == category {
+		if p.Category == "" || f.Category == p.Category {
 			pool = append(pool, f)
 		}
 	}
 	if len(pool) == 0 {
-		return nil, fmt.Errorf("no eligible faults%s - are the demo apps deployed?", catSuffix(category))
+		return nil, fmt.Errorf("no eligible faults%s - are the demo apps deployed?", catSuffix(p.Category))
 	}
 
 	skip := make(map[string]bool)
-	for _, name := range exclude {
+	for _, name := range p.Exclude {
 		skip[name] = true
 	}
-	if notSince > 0 {
-		cutoff := time.Now().UTC().Add(-notSince)
+	if p.NotSince > 0 {
+		cutoff := time.Now().UTC().Add(-p.NotSince)
 		recs, err := e.History()
 		if err != nil {
 			return nil, fmt.Errorf("reading incident history: %w", err)
@@ -655,12 +718,15 @@ func (e *Engine) PickRandom(seed int64, category string, notSince time.Duration,
 			skip[active.Fault] = true
 		}
 	}
-	// Filtering keeps the pool sorted by name, so a seed still gives the same
-	// pick on every lab with the same history.
-	pool = slices.DeleteFunc(pool, func(f *Fault) bool { return skip[f.Name] })
+	pool = slices.DeleteFunc(pool, func(f *Fault) bool {
+		return skip[f.Name] ||
+			(p.Tag != "" && !slices.Contains(f.Tags, p.Tag)) ||
+			(len(p.From) > 0 && !slices.Contains(p.From, f.Name))
+	})
 	if len(pool) == 0 {
-		return nil, fmt.Errorf("no eligible faults%s after applying filters - try without --not-since or --exclude", catSuffix(category))
+		return nil, fmt.Errorf("no eligible faults%s after applying filters - check that the faults in the set are eligible (see 'labctl incident list'), or loosen --tag, --from, --not-since or --exclude", catSuffix(p.Category))
 	}
+	seed := p.Seed
 	if seed == 0 {
 		seed = time.Now().UnixNano()
 	}
@@ -672,35 +738,72 @@ func (e *Engine) PickRandom(seed int64, category string, notSince time.Duration,
 	return pool[idx], nil
 }
 
-// ParsePickFilters reads the not-since and exclude inputs of a random pick, as
-// the CLI flags and the HTTP query give them. Every exclude value may name
-// several faults separated by commas, and each must exist, so a typo fails
-// before anything touches the cluster.
-func (e *Engine) ParsePickFilters(notSince string, exclude []string) (time.Duration, []string, error) {
-	var d time.Duration
-	if notSince != "" {
-		var err error
-		if d, err = time.ParseDuration(notSince); err != nil {
-			return 0, nil, fmt.Errorf("invalid not-since duration: %w", err)
+// PickInput is a random pick as the CLI flags and the HTTP query give it.
+type PickInput struct {
+	Seed     int64
+	Category string
+	Tag      string
+	NotSince string
+	// From and Exclude values may each name several faults separated by
+	// commas.
+	From    []string
+	Exclude []string
+}
+
+// ParsePick checks a random pick's inputs and returns the Pick they ask for.
+// Every name in From and Exclude must exist and the tag must be on at least
+// one fault, so a typo fails before anything touches the cluster.
+func (e *Engine) ParsePick(in PickInput) (Pick, error) {
+	p := Pick{Seed: in.Seed, Category: in.Category, Tag: strings.TrimSpace(in.Tag)}
+	if in.NotSince != "" {
+		d, err := time.ParseDuration(in.NotSince)
+		if err != nil {
+			return Pick{}, fmt.Errorf("invalid not-since duration: %w", err)
 		}
 		if d < 0 {
-			return 0, nil, errors.New("not-since duration must be non-negative")
+			return Pick{}, errors.New("not-since duration must be non-negative")
 		}
+		p.NotSince = d
 	}
+	var err error
+	if p.Exclude, err = e.faultNames("excluded", in.Exclude); err != nil {
+		return Pick{}, err
+	}
+	if p.From, err = e.faultNames("--from", in.From); err != nil {
+		return Pick{}, err
+	}
+	if p.Tag != "" && !e.tagExists(p.Tag) {
+		return Pick{}, fmt.Errorf("no fault has tag %q (see 'labctl incident list -o json' for each fault's tags)", p.Tag)
+	}
+	return p, nil
+}
+
+// faultNames splits comma-separated fault names and checks each one exists.
+// what names the input in the error.
+func (e *Engine) faultNames(what string, values []string) ([]string, error) {
 	var names []string
-	for _, v := range exclude {
+	for _, v := range values {
 		for name := range strings.SplitSeq(v, ",") {
 			name = strings.TrimSpace(name)
 			if name == "" {
 				continue
 			}
 			if _, ok := e.faults[name]; !ok {
-				return 0, nil, fmt.Errorf("excluded fault %q does not exist (see 'labctl incident list')", name)
+				return nil, fmt.Errorf("%s fault %q does not exist (see 'labctl incident list')", what, name)
 			}
 			names = append(names, name)
 		}
 	}
-	return d, names, nil
+	return names, nil
+}
+
+func (e *Engine) tagExists(tag string) bool {
+	for _, f := range e.faults {
+		if slices.Contains(f.Tags, tag) {
+			return true
+		}
+	}
+	return false
 }
 
 func catSuffix(category string) string {

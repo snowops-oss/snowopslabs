@@ -123,3 +123,7 @@ func summarize(counts map[catalog.Kind]int) string {
 	}
 	return strings.Join(parts, ", ")
 }
+
+// contentRoots returns the content roots every loader reads, in precedence
+// order: the project root, then each SNOWOPS_CONTENT_PATH entry.
+func contentRoots() []string { return catalog.ResolveRoots(cfg.ProjectRoot) }

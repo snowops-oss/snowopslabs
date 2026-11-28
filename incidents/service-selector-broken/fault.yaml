@@ -4,6 +4,7 @@ displayName: "Service selector mismatch: empty endpoints"
 description: "The pager says {{.WorkloadName}}'s Service has no ready endpoints, and every request through the ingress is a 503. But every pod is Running and Ready and nothing was deployed. The Service exists. The pods exist. They just don't know about each other anymore."
 category: config
 severity: medium
+tags: [app-down]
 track: kubernetes
 level: beginner
 minutes: 10

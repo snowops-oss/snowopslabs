@@ -57,6 +57,20 @@ function renderScenarios() {
   return { getConfirm: () => captured, notify }
 }
 
+describe('Scenarios view - content roots', () => {
+  it('badges a scenario from an extra content root with its root, and not one from the repository', async () => {
+    serveScenarios([
+      { ...gitops, name: 'ext-scenario', displayName: 'External one', source: '/home/me/team-content/' },
+      gitops,
+    ])
+    renderScenarios()
+    const ext = (await screen.findByText('External one')).closest('.scenario-row') as HTMLElement
+    expect(within(ext).getByText('External: team-content')).toBeInTheDocument()
+    const repo = screen.getByText('GitOps & CI/CD').closest('.scenario-row') as HTMLElement
+    expect(within(repo).queryByText(/External:/)).not.toBeInTheDocument()
+  })
+})
+
 describe('Scenarios view - activation preview', () => {
   beforeEach(() => {
     server.override('GET', '/apps', 200, [

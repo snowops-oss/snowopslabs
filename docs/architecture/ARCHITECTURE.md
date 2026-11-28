@@ -415,7 +415,9 @@ With the marketplace cut, extensibility is a small, documented seam:
   `incidents/`, `learn/`, or `platform/<category>/<provider>/` matching the
   documented contract and it is discovered. `labctl scenario new` scaffolds it.
 - **`SNOWOPS_CONTENT_PATH`** adds external content roots, so a team can keep
-  private scenarios in their own repo without forking.
+  private scenarios, incidents, challenges and learning paths in their own
+  repo without forking. Every loader and the script resolver read the same
+  roots (`catalog.ResolveRoots`); the repository wins a name collision.
 - **`pkg/extension`** keeps a resolver-chain seam for out-of-tree behaviour, with
   a stability policy (`docs/authoring/sdk-stability-policy.md`).
 

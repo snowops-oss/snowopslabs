@@ -273,6 +273,9 @@ export interface Scenario extends CatalogMeta {
   workload?: WorkloadBinding
   /** The app an active scenario was activated against (catalog rows only). */
   app?: string
+  /** The SNOWOPS_CONTENT_PATH root the scenario came from; absent for the
+   *  repository's own (catalog rows only). */
+  source?: string
 }
 
 /** One check outcome from POST /api/v2/scenarios/{name}/verify (pkg/checks.Result).
@@ -551,7 +554,10 @@ export interface Fault extends CatalogMeta {
   category: string          // workload | network | resources | storage | config
   severity: string          // low | medium | high
   expectAlert?: string
-  prerequisites?: { platform?: string[]; apps?: string[]; capabilities?: string[] }
+  /** Named sets the fault belongs to, for a random pick from one set. */
+  tags?: string[]
+  /** scenarios must be active before the fault can be injected. */
+  prerequisites?: { platform?: string[]; apps?: string[]; capabilities?: string[]; scenarios?: string[] }
   references?: ContentReference[]
   snippets?: ContentSnippet[]
   /** Apps the fault names literally - the only app prerequisites a user has to

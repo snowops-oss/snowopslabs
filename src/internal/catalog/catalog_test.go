@@ -256,22 +256,45 @@ checks:
 
 // --- external roots / override ----------------------------------------
 
-func TestLoad_LaterRootOverrides(t *testing.T) {
+// The first root wins a name collision, the same as every engine, and the
+// skipped item is a problem naming both files, so validate fails on it.
+func TestLoad_FirstRootWinsAndCollisionIsAProblem(t *testing.T) {
 	base := validRoot(t)
 	ext := t.TempDir()
-	// External root redefines s1 with a different display name.
-	write(t, ext, "scenarios", "s1", "scenario.yaml", strings.Replace(validScenario, "Scenario One", "Overridden", 1))
+	write(t, ext, "scenarios", "s1", "scenario.yaml", strings.Replace(validScenario, "Scenario One", "Shadow", 1))
 
 	c, _ := Load(base, ext)
 	s, ok := c.Scenario("s1")
-	if !ok {
-		t.Fatal("s1 missing after override")
+	if !ok || s.DisplayName != "Scenario One" {
+		t.Fatalf("s1 = %+v, want the first root's copy", s)
 	}
-	if s.DisplayName != "Overridden" {
-		t.Errorf("DisplayName = %q, want Overridden (later root should win)", s.DisplayName)
+	if src := c.Source(KindScenario, "s1"); !strings.HasPrefix(src, base) {
+		t.Errorf("Source = %q, want it under the first root", src)
 	}
-	if src := c.Source(KindScenario, "s1"); !strings.HasPrefix(src, ext) {
-		t.Errorf("Source = %q, want it under the external root", src)
+	var found bool
+	for _, p := range c.Problems() {
+		if strings.HasPrefix(p.File, ext) && strings.Contains(p.Message, "already provided by "+filepath.Join(base, "scenarios", "s1")) {
+			found = true
+		}
+	}
+	if !found || c.IsValid() {
+		t.Fatalf("problems = %v, want the collision reported against the external file", c.Problems())
+	}
+}
+
+// An item only in an extra root loads with no problem.
+func TestLoad_ExtraRootAddsContent(t *testing.T) {
+	base := validRoot(t)
+	ext := t.TempDir()
+	write(t, ext, "scenarios", "s9", "scenario.yaml", strings.Replace(validScenario, "name: s1", "name: s9", 1))
+	c, _ := Load(base, ext)
+	if _, ok := c.Scenario("s9"); !ok {
+		t.Fatal("s9 from the extra root is missing")
+	}
+	for _, p := range c.Problems() {
+		if strings.HasPrefix(p.File, ext) {
+			t.Errorf("unexpected problem: %s", p)
+		}
 	}
 }
 

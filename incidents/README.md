@@ -37,12 +37,14 @@ severity: high                    # low | medium | high
 track: kubernetes                 # kubernetes | cicd | iac; default kubernetes
 level: beginner                   # beginner | intermediate | advanced; default intermediate
 minutes: 15                       # expected time from inject to resolved; optional
+tags: [app-down]                  # optional: named sets for `inject --random --tag`
 requires: [k8s]                   # targets it needs; default [k8s]
 target:                           # templatable - see "Targeting a workload"
   namespace: "{{.WorkloadNamespace}}"
   workload: "{{.WorkloadName}}"
 prerequisites:
   apps: ["{{.WorkloadName}}"]     # the bound workload must exist; gated before injection
+  # scenarios: [gitops-cicd]      # optional: scenarios that must be active first
 detection:                        # same schema as scenario checks
   name: rollout-healthy           # PASSES when the fault is RESOLVED
   type: script                    # http | kubectl | promql | script
@@ -78,6 +80,27 @@ like any check. To run `inject.sh` or `resolve.sh` against another target, set
 `target:` below always names the broken workload. A `target:` that is not in
 `requires` fails `labctl validate`. See
 [Targets](../docs/reference/scenario-schema.md#targets-requires-and-target).
+
+### Requiring a scenario
+
+`prerequisites.scenarios` names scenarios that must be active before the
+fault can be injected, for a fault that breaks something a scenario set up
+(an ArgoCD Application, a Kafka consumer group). `labctl incident inject`
+and the API refuse with the `labctl scenario up <name>` to run, and a
+`--random` pick leaves the fault out until the scenario is active. labctl
+never activates the scenario itself. A name that is not a scenario fails
+`labctl validate`. `prerequisites.platform` is for a single component the
+fault needs, such as `ingress`, and `--deploy-prereqs` installs it.
+
+### Tags
+
+`tags` puts the fault in named sets, such as every fault that shows as a 503
+at the ingress. `labctl incident inject --random --tag <tag>` picks only from
+faults with that tag. Tags are lowercase letters, digits and dashes. The
+shipped faults are tagged by what the page looks like: `app-down` (every
+request fails), `partial-errors` (some requests fail), `restarts` (pods keep
+restarting), `slow` (latency, not errors) and `release-stuck` (a change that
+never finishes rolling out).
 
 ### Targeting a workload
 

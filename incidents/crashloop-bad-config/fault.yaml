@@ -4,6 +4,7 @@ displayName: "CrashLoop: a bad config value takes the app down"
 description: "{{.WorkloadName}} went down minutes after a config change rolled out. Every request now fails. Every {{.WorkloadName}} pod starts, dies within a second and starts again (CrashLoopBackOff), and no old pod is left to serve."
 category: workload
 severity: high
+tags: [app-down, restarts]
 track: kubernetes
 level: beginner
 minutes: 15

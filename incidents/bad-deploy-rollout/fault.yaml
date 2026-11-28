@@ -4,6 +4,7 @@ displayName: "Bad deploy: image that doesn't exist"
 description: "A release went out referencing an image tag that was never pushed. The rollout is stuck - new pods sit in ImagePullBackOff while the old version keeps serving."
 category: workload
 severity: medium
+tags: [release-stuck]
 track: kubernetes
 level: beginner
 minutes: 10

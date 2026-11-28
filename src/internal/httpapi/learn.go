@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/snowops-oss/snowopslabs/internal/catalog"
+
 	"github.com/snowops-oss/snowopslabs/internal/labcheck"
 	"github.com/snowops-oss/snowopslabs/internal/learn"
 	"github.com/snowops-oss/snowopslabs/internal/workload"
@@ -16,10 +18,12 @@ import (
 )
 
 func learnEngine(s *Server) *learn.Engine {
+	dirs := catalog.KindDirs(catalog.ResolveRoots(s.cfg.ProjectRoot), catalog.KindPath)
 	return learn.New(
-		filepath.Join(s.cfg.ProjectRoot, "learn"),
+		dirs[0],
 		filepath.Join(s.cfg.StateDir, "learn"),
 		filepath.Join(s.cfg.StateDir, "history"),
+		dirs[1:]...,
 	)
 }
 
