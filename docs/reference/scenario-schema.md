@@ -291,6 +291,10 @@ checks:
 Each check type accepts only its own fields - an `http` check carrying a `query`
 is rejected, not ignored.
 
+HTTP requests also have a three-minute cap from the default `pkg/checks` client,
+even when a caller's context has no deadline. SDK callers can replace
+`Runner.HTTPClient` to choose a different request cap.
+
 A `kubectl` check whose field is unset, such as `.status.readyReplicas` before
 any replica is ready, observes an empty value. Against a number that counts as
 `0` for every operator, so `>= 1` and `!= 0` both fail on it.

@@ -26,7 +26,7 @@ type ExecFunc func(ctx context.Context, name string, args ...string) (string, er
 // Runner executes checks. The zero value is not usable; construct with
 // NewRunner and override fields as needed.
 type Runner struct {
-	HTTPClient     *http.Client
+	HTTPClient     *http.Client // NewRunner defaults to a 3-minute request timeout; replace it to use another cap.
 	Exec           ExecFunc
 	PrometheusURL  string        // base URL of the Prometheus HTTP API
 	ScriptDir      string        // base dir for relative script paths (the scenario dir)
@@ -34,10 +34,21 @@ type Runner struct {
 	DefaultTimeout time.Duration // per-check timeout when the check doesn't set one
 }
 
-// NewRunner returns a Runner with production defaults.
+// defaultHTTPTimeout caps each request made by the default HTTP client, so a
+// request whose context has no deadline still ends. Requests that need longer
+// than this fail; a caller that needs longer must supply its own HTTPClient.
+const defaultHTTPTimeout = 3 * time.Minute
+
+// NewRunner returns a Runner with production defaults. Its default HTTP client
+// times out requests after three minutes; callers can replace HTTPClient when
+// their checks need a different request limit.
 func NewRunner() *Runner {
+	return newRunner(defaultHTTPTimeout)
+}
+
+func newRunner(httpTimeout time.Duration) *Runner {
 	r := &Runner{
-		HTTPClient:     &http.Client{},
+		HTTPClient:     &http.Client{Timeout: httpTimeout},
 		DefaultTimeout: 30 * time.Second,
 	}
 	r.Exec = r.defaultExec
