@@ -164,21 +164,45 @@ func (s *Server) Start(addr string) error {
 // shutdownGrace is how long a stopping server waits for requests in flight.
 const shutdownGrace = 10 * time.Second
 
-// Serve is Start until ctx is cancelled, then shuts the server down: it stops
-// accepting connections and waits up to shutdownGrace for requests in flight.
-// It returns nil after a clean shutdown.
+// Serve is ServeListener on a new listener for addr.
 func (s *Server) Serve(ctx context.Context, addr string) error {
-	return s.serveUntil(ctx, s.httpServer(addr), func(h *http.Server) error { return h.ListenAndServe() })
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", addr)
+	if err != nil {
+		return err
+	}
+	return s.ServeListener(ctx, ln)
 }
 
 // ServeTLS is Serve over HTTPS.
 func (s *Server) ServeTLS(ctx context.Context, addr, certFile, keyFile string) error {
-	return s.serveUntil(ctx, s.httpServer(addr), func(h *http.Server) error { return h.ListenAndServeTLS(certFile, keyFile) })
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", addr)
+	if err != nil {
+		return err
+	}
+	return s.ServeTLSListener(ctx, ln, certFile, keyFile)
 }
 
-func (s *Server) serveUntil(ctx context.Context, h *http.Server, listen func(*http.Server) error) error {
+// ServeListener serves on ln until ctx is cancelled, then shuts the server
+// down: it stops accepting connections and waits up to shutdownGrace for
+// requests in flight. It returns nil after a clean shutdown. The caller binds
+// ln, so the port is taken before the caller reports or acts on it.
+func (s *Server) ServeListener(ctx context.Context, ln net.Listener) error {
+	h := s.httpServer(ln.Addr().String())
+	return s.serveUntil(ctx, h, func() error { return h.Serve(ln) })
+}
+
+// ServeTLSListener is ServeListener over HTTPS.
+func (s *Server) ServeTLSListener(ctx context.Context, ln net.Listener, certFile, keyFile string) error {
+	defer func() { _ = ln.Close() }()
+	h := s.httpServer(ln.Addr().String())
+	return s.serveUntil(ctx, h, func() error { return h.ServeTLS(ln, certFile, keyFile) })
+}
+
+func (s *Server) serveUntil(ctx context.Context, h *http.Server, listen func() error) error {
 	errc := make(chan error, 1)
-	go func() { errc <- listen(h) }()
+	go func() { errc <- listen() }()
 	select {
 	case err := <-errc:
 		return err

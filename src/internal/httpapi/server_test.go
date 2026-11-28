@@ -178,3 +178,51 @@ func TestServer_ServeReportsATakenPort(t *testing.T) {
 		t.Fatal("Serve on a taken port returned no error")
 	}
 }
+
+// ServeTLS reports why it cannot start: a taken port, or a certificate that
+// does not load. Neither case waits for a request.
+func TestServer_ServeTLSReportsWhyItCannotStart(t *testing.T) {
+	s := newContractLab(t)
+	taken, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer taken.Close()
+	missing := filepath.Join(t.TempDir(), "absent.pem")
+
+	tests := []struct {
+		name     string
+		addr     string
+		certFile string
+		keyFile  string
+	}{
+		{"port already taken", taken.Addr().String(), missing, missing},
+		{"certificate does not exist", "127.0.0.1:0", missing, missing},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := s.ServeTLS(t.Context(), tt.addr, tt.certFile, tt.keyFile); err == nil {
+				t.Error("ServeTLS returned no error")
+			}
+		})
+	}
+}
+
+func TestServer_ServeTLSListenerClosesOnCertificateError(t *testing.T) {
+	s := newContractLab(t)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	missing := filepath.Join(t.TempDir(), "absent.pem")
+	if err := s.ServeTLSListener(t.Context(), ln, missing, missing); err == nil {
+		t.Fatal("ServeTLSListener returned no error for a missing certificate")
+	}
+
+	rebound, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatalf("listener port %s remained held after TLS setup failed: %v", addr, err)
+	}
+	_ = rebound.Close()
+}
